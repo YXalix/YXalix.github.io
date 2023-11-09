@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 6.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" integrity="sha256-CTSx/A06dm1B063156EVh15m6Y67pAjZZaQc89LLSrU=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"yxalix.github.io","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.18.2","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":true}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="Cache Lab 本文章不含具体代码实现，具体实现在 Github  Introduction为什么需要Cache">
+<meta property="og:type" content="article">
+<meta property="og:title" content="CSAPP:lab:cache">
+<meta property="og:url" content="https://yxalix.github.io/2023/10/19/CSAPP-lab-cache/index.html">
+<meta property="og:site_name" content="程序员的煮茶日记">
+<meta property="og:description" content="Cache Lab 本文章不含具体代码实现，具体实现在 Github  Introduction为什么需要Cache">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201021313.png">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201042050.png">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201057996.png">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201147553.png">
+<meta property="og:image" content="https://github.com/YXalix/imageBlog/blob/main/img/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202023-10-20%20164418.png?raw=true">
+<meta property="og:image" content="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310211959923.png">
+<meta property="og:image" content="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8">
+<meta property="og:image" content="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8">
+<meta property="article:published_time" content="2023-10-19T13:58:30.000Z">
+<meta property="article:modified_time" content="2023-11-09T15:42:20.322Z">
+<meta property="article:author" content="nashzhou">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201021313.png">
+
+
+<link rel="canonical" href="https://yxalix.github.io/2023/10/19/CSAPP-lab-cache/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://yxalix.github.io/2023/10/19/CSAPP-lab-cache/","path":"2023/10/19/CSAPP-lab-cache/","title":"CSAPP:lab:cache"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>CSAPP:lab:cache | 程序员的煮茶日记</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+
+<style>.github-emoji { position: relative; display: inline-block; width: 1.2em; min-height: 1.2em; overflow: hidden; vertical-align: top; color: transparent; }  .github-emoji > span { position: relative; z-index: 10; }  .github-emoji img, .github-emoji .fancybox { margin: 0 !important; padding: 0 !important; border: none !important; outline: none !important; text-decoration: none !important; user-select: none !important; cursor: auto !important; }  .github-emoji img { height: 1.2em !important; width: 1.2em !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; user-select: none !important; cursor: auto !important; } .github-emoji-fallback { color: inherit; } .github-emoji-fallback img { opacity: 0 !important; }</style>
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">程序员的煮茶日记</p>
+      <i class="logo-line"></i>
+    </a>
+      <p class="site-subtitle" itemprop="description">welcome to my blog</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li><li class="menu-item menu-item-friend"><a href="/friends/" rel="section"><i class="fa fa-heart fa-fw"></i>friend</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Cache-Lab"><span class="nav-number">1.</span> <span class="nav-text">Cache Lab</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Introduction"><span class="nav-number">1.1.</span> <span class="nav-text">Introduction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Part-A-Writing-a-Cache-Simulator"><span class="nav-number">1.2.</span> <span class="nav-text">Part A: Writing a Cache Simulator</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C"><span class="nav-number">1.2.1.</span> <span class="nav-text">1. 准备工作</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-%E5%AE%9E%E7%8E%B0%E8%BF%87%E7%A8%8B%E4%B8%8E%E5%BF%83%E5%BE%97"><span class="nav-number">1.2.2.</span> <span class="nav-text">2. 实现过程与心得</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Part-B-Optimizing-Matrix-Transpose"><span class="nav-number">1.3.</span> <span class="nav-text">Part B: Optimizing Matrix Transpose</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C-1"><span class="nav-number">1.3.1.</span> <span class="nav-text">1. 准备工作</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-%E5%AE%9E%E7%8E%B0%E8%BF%87%E7%A8%8B%E4%B8%8E%E5%BF%83%E5%BE%97-1"><span class="nav-number">1.3.2.</span> <span class="nav-text">2. 实现过程与心得</span></a></li></ol></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nashzhou"
+      src="/images/touxiang.gif">
+  <p class="site-author-name" itemprop="name">nashzhou</p>
+  <div class="site-description" itemprop="description">welcome to my blog</div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">15</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">7</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">6</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/YXalix" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;YXalix" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://yxalix.github.io/2023/10/19/CSAPP-lab-cache/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/touxiang.gif">
+      <meta itemprop="name" content="nashzhou">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="程序员的煮茶日记">
+      <meta itemprop="description" content="welcome to my blog">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="CSAPP:lab:cache | 程序员的煮茶日记">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          CSAPP:lab:cache
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-10-19 21:58:30" itemprop="dateCreated datePublished" datetime="2023-10-19T21:58:30+08:00">2023-10-19</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2023-11-09 23:42:20" itemprop="dateModified" datetime="2023-11-09T23:42:20+08:00">2023-11-09</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/CSAPP/" itemprop="url" rel="index"><span itemprop="name">CSAPP</span></a>
+        </span>
+          ，
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/CSAPP/lab/" itemprop="url" rel="index"><span itemprop="name">lab</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h2 id="Cache-Lab"><a href="#Cache-Lab" class="headerlink" title="Cache Lab"></a>Cache Lab</h2><blockquote>
+<p>本文章不含具体代码实现，具体实现在 <a target="_blank" rel="noopener" href="https://github.com/YXalix/csapplab/tree/master/cachelab/cachelab-handout">Github</a></p>
+</blockquote>
+<h3 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h3><p><strong>为什么需要Cache</strong></p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201021313.png" alt="" style="zoom:30%;">
+
+
+
+<ul>
+<li>由这张经典的分层图，由下至上速度更快，价格更贵。那么在工程上考虑，如何能更好得利用这些不同处理能力的存储设备就很关键。Generally specking，每下一层都可以理解为是上一层的cache。</li>
+<li>Cache 可以最大化利用程序的时间局部性、空间局部性。</li>
+</ul>
+<p><strong>Cache memory</strong></p>
+<ul>
+<li><p>Cache memories are small, fast SRAM-based memories managed automatically in hardware.</p>
+<ul>
+<li>更小、更快、更贵的memory cache是更大、更慢、更便宜的memory的副本子集，单位为block。</li>
+</ul>
+</li>
+<li><p>Cache Organization (以64位机器为例):</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201042050.png" alt="" style="zoom:20%;">
+
+<p>Block offset: b bits</p>
+<p>Set index: s bits</p>
+<p>Tag Bits: (Address Size - b - s)</p>
+<p>Cache 是由 $2^s$ 个 cache set 组成的集合，而每个cache set由E个cache lines组成，每个cache line 存储一个数据块block，每个数据块拥有$2^b$ 个字节，所以cache存储能力为 $S \times B \times E$，大致如下图：</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201057996.png" alt="image-20231020105717683" style="zoom:30%;">
+</li>
+<li><p>Miss</p>
+<p>当需要Block B时，如果Block B不在cache中，就需要从memory中获取Block B，这就是一次Miss。Miss可以分为三种：</p>
+<ul>
+<li>Cold miss ：第一次获取该block会得到一次miss</li>
+<li>Conflict miss：当cache容量足够时，当两个block发生冲突时，就会导致该block miss</li>
+<li>Capacity miss：当所需cache block比cache的容量大时发生，这就需要设计一种cache替换算法</li>
+</ul>
+</li>
+</ul>
+<p><strong>Cache 替换算法</strong></p>
+<ul>
+<li>FIFO：每次替换最先进入的数据，而不考虑之前被访问的频率</li>
+<li>LRU：每次替换最久未被访问的数据，实际应用较广</li>
+<li>LFU：每次替换访问次数最小的数据</li>
+<li>…</li>
+</ul>
+<h3 id="Part-A-Writing-a-Cache-Simulator"><a href="#Part-A-Writing-a-Cache-Simulator" class="headerlink" title="Part A: Writing a Cache Simulator"></a>Part A: Writing a Cache Simulator</h3><blockquote>
+<p>实验指导手册：<a target="_blank" rel="noopener" href="http://www.cs.cmu.edu/afs/cs/academic/class/15213-f15/www/recitations/rec07.pdf">lab</a></p>
+<p>Cache Lab writeup：<a target="_blank" rel="noopener" href="http://csapp.cs.cmu.edu/3e/cachelab.pdf">cachelab.dvi (cmu.edu)</a></p>
+</blockquote>
+<h4 id="1-准备工作"><a href="#1-准备工作" class="headerlink" title="1. 准备工作"></a>1. 准备工作</h4><p><strong>任务要求</strong></p>
+<p>在<em>csim.c</em>中写一个cache模拟器，讲valgrind memory trace作为输入，输出：the total munber of hits，misses，and evictions。</p>
+<p>二进制可执行问文件<em>csim-ref</em>作为对照，s e b分别对应 $S \times B \times E$</p>
+<figure class="highlight shell"><table><tbody><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Usage: ./csim-ref [-hv] -s &lt;s&gt; -E &lt;E&gt; -b &lt;b&gt; -t &lt;tracefile&gt;</span><br></pre></td></tr></tbody></table></figure>
+
+<p>编程规则</p>
+<ul>
+<li><p>在<em>csim.c</em>中添加自己的标识符。</p>
+</li>
+<li><p>必须在没有警告的情况下编译。</p>
+</li>
+<li><p>使用malloc函数，适配任意的S、E和B输入。</p>
+</li>
+<li><p>忽略所有的instruction cache access。</p>
+</li>
+<li><p>在<code>main()</code>末尾调用如下函数，来获取分数：</p>
+<p><code>printSummary(hit_count, miss_count, eviction_count);</code></p>
+</li>
+<li><p>对于这个实验，假设内存访问是正确对齐的，且耽搁内存访问永远不会跨越block bundaries，这样就可以忽略valgrind trace中的size大小。</p>
+</li>
+</ul>
+<p><strong>数据结构</strong></p>
+<p>按照之前的定义，cache是一个cache line的2维数组，而每个cache line 应该包含Valid bit、Tag、LRU counter。</p>
+<p><strong>LRU实现</strong></p>
+<ol>
+<li><p>HashMap + 双向循环链表：精准实现get, put方法都在O(1)的平均时间复杂度运行，但存在空间浪费。</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201147553.png" alt="" style="zoom:25%;">
+</li>
+<li><p>近似实现：随机取出若干个key，然后按照访问时间排序后，淘汰掉最不经常使用的。</p>
+</li>
+</ol>
+<p><strong>测试用例分析</strong></p>
+<ul>
+<li><p>Trace Files：在traces文件夹下，由valgrind生成</p>
+</li>
+<li><p>每个.trace文件有n行，每一行的格式如下</p>
+<figure class="highlight c++"><table><tbody><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">I <span class="number">0400</span>d7d4,<span class="number">8</span></span><br><span class="line"> M <span class="number">0421</span>c7f0,<span class="number">4</span></span><br><span class="line"> L <span class="number">04f</span>6b868,<span class="number">8</span></span><br><span class="line"> S <span class="number">7f</span>f0005c8,<span class="number">8</span></span><br><span class="line">[space] operation address,size</span><br></pre></td></tr></tbody></table></figure>
+
+<p><em>operation</em>表示内存访问类型，”I” 表示指令加载，“L”表示数据加载，“S”表示数据存储，“M”表示数据修改。</p>
+<p><em>address</em>表示64-bit十六进制内存地址。</p>
+<p><em>size</em>表示操作访问的字节数。</p>
+</li>
+</ul>
+<p><strong>所需函数调用</strong></p>
+<figure class="highlight c++"><table><tbody><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 自动解析Unix命令行上的元素, </span></span><br><span class="line"><span class="comment">// man 3 getopt (for more information)</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="built_in">getopt</span>()</span><br><span class="line">  </span><br><span class="line"><span class="comment">// 从trace files中读取数据</span></span><br><span class="line"><span class="built_in">fscanf</span>()</span><br><span class="line">  </span><br><span class="line">malloc/free</span><br></pre></td></tr></tbody></table></figure>
+
+<h4 id="2-实现过程与心得"><a href="#2-实现过程与心得" class="headerlink" title="2. 实现过程与心得"></a>2. 实现过程与心得</h4><figure class="highlight shell"><table><tbody><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">make</span><br><span class="line">./test-csim</span><br></pre></td></tr></tbody></table></figure>
+
+<ol>
+<li>首先按照利用<code>getopt()</code>以及<code>fscanf()</code>函数来处理程序输入以及trace文件读取。</li>
+<li>首先定义cache line数据类型，以及其指针，然后malloc生成指定大小的cache。</li>
+<li>cache逻辑：给定一个address<ol>
+<li>分离出set_index与tag</li>
+<li>遍历该set的所有cache line，如果tag匹配则hit</li>
+<li>若无匹配，查看是否有空闲cache line</li>
+<li>若无空闲cache line，就进行替换，替换方法采用近似方法，可参考<a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/365205479">Redis中的LRU算法,一篇文章彻底搞懂 - 知乎 (zhihu.com)</a></li>
+</ol>
+</li>
+</ol>
+<p>整个实现非常简单，但是需要细心，注意文件的关闭以及cache free。最后通过的结果应该如下图：</p>
+<p><img src="https://github.com/YXalix/imageBlog/blob/main/img/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202023-10-20%20164418.png?raw=true"></p>
+<h3 id="Part-B-Optimizing-Matrix-Transpose"><a href="#Part-B-Optimizing-Matrix-Transpose" class="headerlink" title="Part B: Optimizing Matrix Transpose"></a>Part B: Optimizing Matrix Transpose</h3><h4 id="1-准备工作-1"><a href="#1-准备工作-1" class="headerlink" title="1. 准备工作"></a>1. 准备工作</h4><p><strong>任务要求</strong></p>
+<p>在<em>trans.c</em>中实现*transpose_submit()*函数，使其cache misses最小。</p>
+<p><strong>编程规则</strong></p>
+<ol>
+<li><p>最多定义总和12个int局部变量，包括子函数</p>
+</li>
+<li><p>不能使用递归</p>
+</li>
+<li><p>不能修改array A</p>
+</li>
+<li><p>不能malloc任何array</p>
+</li>
+<li><p>Cache 条件</p>
+<p>1KB cache，E=1，b=5，s=5</p>
+<p>所以有32个cache set，每个cache set 有一个block，每个block中可存储32个字节，也就是8个int</p>
+</li>
+</ol>
+<h4 id="2-实现过程与心得-1"><a href="#2-实现过程与心得-1" class="headerlink" title="2. 实现过程与心得"></a>2. 实现过程与心得</h4><figure class="highlight shell"><table><tbody><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta prompt_"># </span><span class="language-bash">32 * 32 miss &lt; 300</span></span><br><span class="line"><span class="meta prompt_"># </span><span class="language-bash">64 * 64 miss &lt; 1300</span></span><br><span class="line"><span class="meta prompt_"># </span><span class="language-bash">61 * 67 miss &lt; 2000</span></span><br><span class="line">./test-trans -M 32 -N 32</span><br></pre></td></tr></tbody></table></figure>
+
+<ol>
+<li><p>$32 \times 32$ 矩阵下</p>
+<p>根据所给的cache，一个很自然的想法就是分块，首先考虑的是对$8 \times 8$的block进行transpose，但是测试得到只降到了343次，并不符合要求。在思考这些miss出现的原因时，可以想到，当A，B中的元素都对应同一个cache block时就会出现，这样完成八个int的赋值会多造成两次miss，所以最简单的办法就是每次赋值的时候，一次性将A的整个block中的8个int读取到局部变量中，然后再赋值给B，这样在测试时就可以得到287次miss<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+<li><p>$64 \times 64$ 矩阵下</p>
+<p>继续尝试使用$8 \times 8$的方式，得到了4611次misses，因为s=5，只有32个cache set，对于$64 \times 64$ 矩阵来说，每4行一个循环，因此会存在大量的cache冲突，第一个尝试办法就是将$8 \times 8$变为$4 \times 4$，因为每超过四行就会出现cache冲突。简单的修改后得到了1699次misses，还不能达到要求。接下来一个很自然的想法自然是重新按照$8 \times 8$进行，但是对内部进行特别优化，首先想到的就是把其分成4个$4 \times 4$，分三步走：</p>
+<ol>
+<li><p>取前4行的A，拆成两部分，一部分transpose，一部分存储至B2.1</p>
+</li>
+<li><p>取后四行A的前半部分，并同时将B2.1复位</p>
+</li>
+<li><p>处理B2.2</p>
+<p>最终计算示意图如下：</p>
+</li>
+</ol>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310211959923.png" alt="" style="zoom:40%;">
+
+<p>测试结果为1227次misses<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+<li><p>$61 \times 67$ 矩阵下</p>
+<p>对于不规则的矩形，我首先考虑先按照$8$个为一组进行处理，然后对于剩下的部分按照一般方法处理，最终测试得到1875次misses<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+</ol>
+<p>实验过程中，不断思考目前这些cache由什么情况造成的，是由于A，B造成的冲突，还是B，B造成的冲突。</p>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/09/19/vim%E7%AC%94%E8%AE%B0/" rel="prev" title="vim笔记">
+                  <i class="fa fa-angle-left"></i> vim笔记
+                </a>
+            </div>
+            <div class="post-nav-item">
+                <a href="/2023/10/21/English-Learning/" rel="next" title="English-Learning">
+                  English-Learning <i class="fa fa-angle-right"></i>
+                </a>
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2023</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">nashzhou</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/next-theme-pjax/0.6.0/pjax.min.js" integrity="sha256-vxLn1tSKWD4dqbMRyv940UYw4sXgMtYcK6reefzZrao=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script><script src="/js/pjax.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hexo-generator-searchdb/1.4.1/search.js" integrity="sha256-1kfA5uHPf65M5cphT2dvymhkuyHPQp5A53EGZOnOLmc=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+
+
+  
+
+
+
+
+  
+
+  <script class="next-config" data-name="enableMath" type="application/json">true</script><script class="next-config" data-name="mathjax" type="application/json">{"enable":true,"tags":"none","js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js","integrity":"sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI="}}</script>
+<script src="/js/third-party/math/mathjax.js"></script>
+
+
+
+</body>
+</html>
