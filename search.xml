@@ -1,0 +1,1211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>CSAPP:lab:cache</title>
+    <url>/2023/10/19/CSAPP-lab-cache/</url>
+    <content><![CDATA[<h2 id="Cache-Lab"><a href="#Cache-Lab" class="headerlink" title="Cache Lab"></a>Cache Lab</h2><blockquote>
+<p>本文章不含具体代码实现，具体实现在 <a href="https://github.com/YXalix/csapplab/tree/master/cachelab/cachelab-handout">Github</a></p>
+</blockquote>
+<h3 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h3><p><strong>为什么需要Cache</strong></p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201021313.png" alt="" style="zoom:30%;">
+
+
+
+<ul>
+<li>由这张经典的分层图，由下至上速度更快，价格更贵。那么在工程上考虑，如何能更好得利用这些不同处理能力的存储设备就很关键。Generally specking，每下一层都可以理解为是上一层的cache。</li>
+<li>Cache 可以最大化利用程序的时间局部性、空间局部性。</li>
+</ul>
+<p><strong>Cache memory</strong></p>
+<ul>
+<li><p>Cache memories are small, fast SRAM-based memories managed automatically in hardware.</p>
+<ul>
+<li>更小、更快、更贵的memory cache是更大、更慢、更便宜的memory的副本子集，单位为block。</li>
+</ul>
+</li>
+<li><p>Cache Organization (以64位机器为例):</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201042050.png" alt="" style="zoom:20%;">
+
+<p>Block offset: b bits</p>
+<p>Set index: s bits</p>
+<p>Tag Bits: (Address Size - b - s)</p>
+<p>Cache 是由 $2^s$ 个 cache set 组成的集合，而每个cache set由E个cache lines组成，每个cache line 存储一个数据块block，每个数据块拥有$2^b$ 个字节，所以cache存储能力为 $S \times B \times E$，大致如下图：</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201057996.png" alt="image-20231020105717683" style="zoom:30%;">
+</li>
+<li><p>Miss</p>
+<p>当需要Block B时，如果Block B不在cache中，就需要从memory中获取Block B，这就是一次Miss。Miss可以分为三种：</p>
+<ul>
+<li>Cold miss ：第一次获取该block会得到一次miss</li>
+<li>Conflict miss：当cache容量足够时，当两个block发生冲突时，就会导致该block miss</li>
+<li>Capacity miss：当所需cache block比cache的容量大时发生，这就需要设计一种cache替换算法</li>
+</ul>
+</li>
+</ul>
+<p><strong>Cache 替换算法</strong></p>
+<ul>
+<li>FIFO：每次替换最先进入的数据，而不考虑之前被访问的频率</li>
+<li>LRU：每次替换最久未被访问的数据，实际应用较广</li>
+<li>LFU：每次替换访问次数最小的数据</li>
+<li>…</li>
+</ul>
+<h3 id="Part-A-Writing-a-Cache-Simulator"><a href="#Part-A-Writing-a-Cache-Simulator" class="headerlink" title="Part A: Writing a Cache Simulator"></a>Part A: Writing a Cache Simulator</h3><blockquote>
+<p>实验指导手册：<a href="http://www.cs.cmu.edu/afs/cs/academic/class/15213-f15/www/recitations/rec07.pdf">lab</a></p>
+<p>Cache Lab writeup：<a href="http://csapp.cs.cmu.edu/3e/cachelab.pdf">cachelab.dvi (cmu.edu)</a></p>
+</blockquote>
+<h4 id="1-准备工作"><a href="#1-准备工作" class="headerlink" title="1. 准备工作"></a>1. 准备工作</h4><p><strong>任务要求</strong></p>
+<p>在<em>csim.c</em>中写一个cache模拟器，讲valgrind memory trace作为输入，输出：the total munber of hits，misses，and evictions。</p>
+<p>二进制可执行问文件<em>csim-ref</em>作为对照，s e b分别对应 $S \times B \times E$</p>
+<figure class="highlight shell"><table><tbody><tr><td class="code"><pre><span class="line">Usage: ./csim-ref [-hv] -s &lt;s&gt; -E &lt;E&gt; -b &lt;b&gt; -t &lt;tracefile&gt;</span><br></pre></td></tr></tbody></table></figure>
+
+<p>编程规则</p>
+<ul>
+<li><p>在<em>csim.c</em>中添加自己的标识符。</p>
+</li>
+<li><p>必须在没有警告的情况下编译。</p>
+</li>
+<li><p>使用malloc函数，适配任意的S、E和B输入。</p>
+</li>
+<li><p>忽略所有的instruction cache access。</p>
+</li>
+<li><p>在<code>main()</code>末尾调用如下函数，来获取分数：</p>
+<p><code>printSummary(hit_count, miss_count, eviction_count);</code></p>
+</li>
+<li><p>对于这个实验，假设内存访问是正确对齐的，且耽搁内存访问永远不会跨越block bundaries，这样就可以忽略valgrind trace中的size大小。</p>
+</li>
+</ul>
+<p><strong>数据结构</strong></p>
+<p>按照之前的定义，cache是一个cache line的2维数组，而每个cache line 应该包含Valid bit、Tag、LRU counter。</p>
+<p><strong>LRU实现</strong></p>
+<ol>
+<li><p>HashMap + 双向循环链表：精准实现get, put方法都在O(1)的平均时间复杂度运行，但存在空间浪费。</p>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310201147553.png" alt="" style="zoom:25%;">
+</li>
+<li><p>近似实现：随机取出若干个key，然后按照访问时间排序后，淘汰掉最不经常使用的。</p>
+</li>
+</ol>
+<p><strong>测试用例分析</strong></p>
+<ul>
+<li><p>Trace Files：在traces文件夹下，由valgrind生成</p>
+</li>
+<li><p>每个.trace文件有n行，每一行的格式如下</p>
+<figure class="highlight c++"><table><tbody><tr><td class="code"><pre><span class="line">I <span class="number">0400</span>d7d4,<span class="number">8</span></span><br><span class="line"> M <span class="number">0421</span>c7f0,<span class="number">4</span></span><br><span class="line"> L <span class="number">04f</span>6b868,<span class="number">8</span></span><br><span class="line"> S <span class="number">7f</span>f0005c8,<span class="number">8</span></span><br><span class="line">[space] operation address,size</span><br></pre></td></tr></tbody></table></figure>
+
+<p><em>operation</em>表示内存访问类型，”I” 表示指令加载，“L”表示数据加载，“S”表示数据存储，“M”表示数据修改。</p>
+<p><em>address</em>表示64-bit十六进制内存地址。</p>
+<p><em>size</em>表示操作访问的字节数。</p>
+</li>
+</ul>
+<p><strong>所需函数调用</strong></p>
+<figure class="highlight c++"><table><tbody><tr><td class="code"><pre><span class="line"><span class="comment">// 自动解析Unix命令行上的元素, </span></span><br><span class="line"><span class="comment">// man 3 getopt (for more information)</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="built_in">getopt</span>()</span><br><span class="line">  </span><br><span class="line"><span class="comment">// 从trace files中读取数据</span></span><br><span class="line"><span class="built_in">fscanf</span>()</span><br><span class="line">  </span><br><span class="line">malloc/free</span><br></pre></td></tr></tbody></table></figure>
+
+<h4 id="2-实现过程与心得"><a href="#2-实现过程与心得" class="headerlink" title="2. 实现过程与心得"></a>2. 实现过程与心得</h4><figure class="highlight shell"><table><tbody><tr><td class="code"><pre><span class="line">make</span><br><span class="line">./test-csim</span><br></pre></td></tr></tbody></table></figure>
+
+<ol>
+<li>首先按照利用<code>getopt()</code>以及<code>fscanf()</code>函数来处理程序输入以及trace文件读取。</li>
+<li>首先定义cache line数据类型，以及其指针，然后malloc生成指定大小的cache。</li>
+<li>cache逻辑：给定一个address<ol>
+<li>分离出set_index与tag</li>
+<li>遍历该set的所有cache line，如果tag匹配则hit</li>
+<li>若无匹配，查看是否有空闲cache line</li>
+<li>若无空闲cache line，就进行替换，替换方法采用近似方法，可参考<a href="https://zhuanlan.zhihu.com/p/365205479">Redis中的LRU算法,一篇文章彻底搞懂 - 知乎 (zhihu.com)</a></li>
+</ol>
+</li>
+</ol>
+<p>整个实现非常简单，但是需要细心，注意文件的关闭以及cache free。最后通过的结果应该如下图：</p>
+<p><img src="https://github.com/YXalix/imageBlog/blob/main/img/%E5%B1%8F%E5%B9%95%E6%88%AA%E5%9B%BE%202023-10-20%20164418.png?raw=true"></p>
+<h3 id="Part-B-Optimizing-Matrix-Transpose"><a href="#Part-B-Optimizing-Matrix-Transpose" class="headerlink" title="Part B: Optimizing Matrix Transpose"></a>Part B: Optimizing Matrix Transpose</h3><h4 id="1-准备工作-1"><a href="#1-准备工作-1" class="headerlink" title="1. 准备工作"></a>1. 准备工作</h4><p><strong>任务要求</strong></p>
+<p>在<em>trans.c</em>中实现*transpose_submit()*函数，使其cache misses最小。</p>
+<p><strong>编程规则</strong></p>
+<ol>
+<li><p>最多定义总和12个int局部变量，包括子函数</p>
+</li>
+<li><p>不能使用递归</p>
+</li>
+<li><p>不能修改array A</p>
+</li>
+<li><p>不能malloc任何array</p>
+</li>
+<li><p>Cache 条件</p>
+<p>1KB cache，E=1，b=5，s=5</p>
+<p>所以有32个cache set，每个cache set 有一个block，每个block中可存储32个字节，也就是8个int</p>
+</li>
+</ol>
+<h4 id="2-实现过程与心得-1"><a href="#2-实现过程与心得-1" class="headerlink" title="2. 实现过程与心得"></a>2. 实现过程与心得</h4><figure class="highlight shell"><table><tbody><tr><td class="code"><pre><span class="line"><span class="meta prompt_"># </span><span class="language-bash">32 * 32 miss &lt; 300</span></span><br><span class="line"><span class="meta prompt_"># </span><span class="language-bash">64 * 64 miss &lt; 1300</span></span><br><span class="line"><span class="meta prompt_"># </span><span class="language-bash">61 * 67 miss &lt; 2000</span></span><br><span class="line">./test-trans -M 32 -N 32</span><br></pre></td></tr></tbody></table></figure>
+
+<ol>
+<li><p>$32 \times 32$ 矩阵下</p>
+<p>根据所给的cache，一个很自然的想法就是分块，首先考虑的是对$8 \times 8$的block进行transpose，但是测试得到只降到了343次，并不符合要求。在思考这些miss出现的原因时，可以想到，当A，B中的元素都对应同一个cache block时就会出现，这样完成八个int的赋值会多造成两次miss，所以最简单的办法就是每次赋值的时候，一次性将A的整个block中的8个int读取到局部变量中，然后再赋值给B，这样在测试时就可以得到287次miss<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+<li><p>$64 \times 64$ 矩阵下</p>
+<p>继续尝试使用$8 \times 8$的方式，得到了4611次misses，因为s=5，只有32个cache set，对于$64 \times 64$ 矩阵来说，每4行一个循环，因此会存在大量的cache冲突，第一个尝试办法就是将$8 \times 8$变为$4 \times 4$，因为每超过四行就会出现cache冲突。简单的修改后得到了1699次misses，还不能达到要求。接下来一个很自然的想法自然是重新按照$8 \times 8$进行，但是对内部进行特别优化，首先想到的就是把其分成4个$4 \times 4$，分三步走：</p>
+<ol>
+<li><p>取前4行的A，拆成两部分，一部分transpose，一部分存储至B2.1</p>
+</li>
+<li><p>取后四行A的前半部分，并同时将B2.1复位</p>
+</li>
+<li><p>处理B2.2</p>
+<p>最终计算示意图如下：</p>
+</li>
+</ol>
+<img src="https://cdn.jsdelivr.net/gh/YXalix/imageBlog/img/202310211959923.png" alt="" style="zoom:40%;">
+
+<p>测试结果为1227次misses<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+<li><p>$61 \times 67$ 矩阵下</p>
+<p>对于不规则的矩形，我首先考虑先按照$8$个为一组进行处理，然后对于剩下的部分按照一般方法处理，最终测试得到1875次misses<span class="github-emoji"><span>💯</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+</ol>
+<p>实验过程中，不断思考目前这些cache由什么情况造成的，是由于A，B造成的冲突，还是B，B造成的冲突。</p>
+]]></content>
+      <categories>
+        <category>CSAPP</category>
+        <category>lab</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>English-Learning</title>
+    <url>/2023/10/21/English-Learning/</url>
+    <content><![CDATA[<p>empty</p>
+]]></content>
+      <categories>
+        <category>English</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>bevy模块化学习</title>
+    <url>/2023/11/09/bevy%E6%A8%A1%E5%9D%97%E5%8C%96%E5%AD%A6%E4%B9%A0/</url>
+    <content><![CDATA[<p>开一个大坑，持续跟进bevy进展</p>
+]]></content>
+      <categories>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>bevy</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>cs_courses</title>
+    <url>/2023/10/22/cs-courses/</url>
+    <content><![CDATA[<h1 id="CSAPP"><a href="#CSAPP" class="headerlink" title="CSAPP"></a>CSAPP</h1><blockquote>
+<p>笔记：<a href="https://hansimov.gitbook.io/csapp/">深入理解计算机系统（CSAPP） (gitbook.io)</a></p>
+</blockquote>
+]]></content>
+  </entry>
+  <entry>
+    <title>docker笔记</title>
+    <url>/2023/09/18/docker%E7%AC%94%E8%AE%B0/</url>
+    <content><![CDATA[<h1 id="What-is-docker"><a href="#What-is-docker" class="headerlink" title="What is docker?"></a>What is docker?</h1><h1 id="docker-基础命令"><a href="#docker-基础命令" class="headerlink" title="docker 基础命令"></a>docker 基础命令</h1><ol>
+<li>从image创建一个container并运行同时执行/bin/bash，防止container开启完成后无任务exit<br>docker run -it pm /bin/bash</li>
+</ol>
+]]></content>
+      <categories>
+        <category>学习</category>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>笔记</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>dora模块化学习</title>
+    <url>/2023/11/09/dora%E6%A8%A1%E5%9D%97%E5%8C%96%E5%AD%A6%E4%B9%A0/</url>
+    <content><![CDATA[<p>开一个大坑，持续跟进dora进展</p>
+]]></content>
+      <categories>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>dora</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Daily Literary</title>
+    <url>/2023/11/09/hello-world/</url>
+    <content><![CDATA[<p>Welcome to My Blog  </p>
+<ol>
+<li><p>后来烟雨落盛京，一人撑伞两人行。</p>
+</li>
+<li><p>晚来天欲雨，能饮一杯无。（取自唐代白居易的《问刘十九》）</p>
+</li>
+</ol>
+]]></content>
+      <tags>
+        <tag>top</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>home</title>
+    <url>/2023/10/23/home/</url>
+    <content><![CDATA[<h2 id="Welcome-to-GitHub-Pages"><a href="#Welcome-to-GitHub-Pages" class="headerlink" title="Welcome to GitHub Pages"></a>Welcome to GitHub Pages</h2>]]></content>
+  </entry>
+  <entry>
+    <title>rcore_learning</title>
+    <url>/2023/10/24/rcore-learning/</url>
+    <content><![CDATA[<h2 id="Record"><a href="#Record" class="headerlink" title="Record"></a>Record</h2><ul>
+<li><p><strong>2023/10/23</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 实验环境配置</li>
+<li><input checked="" disabled="" type="checkbox"> 阅读第一章与第二章内容<ul>
+<li><input checked="" disabled="" type="checkbox"> 查看lab 1任务</li>
+</ul>
+</li>
+</ul>
+<p><strong>感受</strong></p>
+
+
+<p>感觉基础薄弱，阅读了第一二章后，对LibOS以及batchOS有了一个大致的认识，但是对于如何实现lab 3还没想法</p>
+</li>
+<li><p><strong>2023/10/24</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 阅读第三章内容</li>
+<li><input checked="" disabled="" type="checkbox"> 完成lab 1</li>
+</ul>
+<p><strong>笔记</strong></p>
+<p>RISC-V 寄存器功能分类</p>
+<table>
+<thead>
+<tr>
+<th>a0-a7(x10-x17)</th>
+<th>调用者保存</th>
+<th>用来传递输入参数，其中a0和a1还用来保存返回值</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>t0-t6(x5-x7, x28-x31)</td>
+<td>调用者保存</td>
+<td>作为临时寄存器使用，在被调用函数中可以随意使用无需保存</td>
+</tr>
+<tr>
+<td>s0-s11(x8-x9, x18-x27)</td>
+<td>被调用者保存</td>
+<td>作为临时寄存器使用，被调用函数保存后才能被调用函数使用</td>
+</tr>
+</tbody></table>
+<p><strong>感受</strong></p>
+<p>在反复查看文档和代码后，慢慢理清ch3分支代码的运行逻辑，然后根据实验要求完成任务</p>
+</li>
+<li><p><strong>2023/10/25</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 阅读第四章内容</li>
+<li><input disabled="" type="checkbox"> 完成lab 2</li>
+</ul>
+<p><strong>笔记</strong></p>
+<ul>
+<li><p>智能指针</p>
+<ul>
+<li>Box<t></t></li>
+<li>Rc<t>, Arc<t></t></t></li>
+<li>RefCell<t></t></li>
+<li>Mutex<t></t></li>
+</ul>
+</li>
+<li><p>概念</p>
+<ul>
+<li><p>satp(内存控制相关的CSP寄存器)</p>
+<p>能控制CPU使用哪种页表实现，存根页表所在物理页号。所以多任务下，每个任务都需要有对应的satp</p>
+</li>
+<li><p>虚拟页号VPN，物理页号PPN，每个应用拥有一个页表Page Table，由虚拟地址得到VPN，查表找到PPN，合上页内偏移就得到了物理地址。页表中对虚拟页号设置了保护位rwx。由于需要CPU访问页表，所以需要内核和硬件之间关于页表的内存布局达成一致。</p>
+</li>
+<li><p>SV39多级页表的硬件机制</p>
+<ul>
+<li><p>页表项(PTE, Page Table Entry)：usize</p>
+</li>
+<li><p>三级页表</p>
+</li>
+<li><p>快表TLB</p>
+<p>切换任务后，即satp切换，需要刷新清空整个TLB，（使用sfence.vma指令）</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p><strong>感受</strong></p>
+<p>基础薄弱，暂时没有好的debug方法</p>
+</li>
+<li><p><strong>2023/10/26</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input disabled="" type="checkbox"> 完成lab2</li>
+<li><input disabled="" type="checkbox"> 阅读第五章</li>
+</ul>
+<p><strong>感受</strong></p>
+<p>在多页表管理的部分比较困惑，对于地址空间切换等概念与实现模糊，所以实验进程较慢。</p>
+</li>
+<li><p><strong>2023/10/27</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 完成lab2</li>
+<li><input disabled="" type="checkbox"> 阅读第五章</li>
+</ul>
+<p><strong>感受</strong></p>
+<p>在转换思路后完成了lab2，但是实际上对于目前os的整体过程还是有很多疑惑的地方，不过还是有很大收获的</p>
+</li>
+<li><p><strong>2023/10/29</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 完成lab3</li>
+<li><input checked="" disabled="" type="checkbox"> 阅读第五章</li>
+<li><input disabled="" type="checkbox"> 阅读第六章</li>
+</ul>
+<p><strong>记录</strong></p>
+<p>flag描述打开文件的标志</p>
+<p><strong>感受</strong></p>
+<p>第五章在代码上的改动并不是很大，而且对于进程调度等概念比较熟悉，所以实验做的比较轻松</p>
+</li>
+<li><p><strong>2023/10/30</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 阅读第六章</li>
+<li><input disabled="" type="checkbox"> 完成lab4</li>
+</ul>
+<p><strong>记录</strong></p>
+<p><strong>感受</strong></p>
+<p>对于文件系统一点不了解，从零开始构建概念，速度比较慢</p>
+<p><strong>2023/10/31</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 完成lab4</li>
+</ul>
+<p><strong>记录</strong></p>
+<p><strong>感受</strong></p>
+<p>对文件系统的感念加深，文件系统与内核的联系变得清晰，文件系统整体上的一层一层的抽象，也不断建立起来。</p>
+<p><strong>2023/11/02</strong></p>
+<p><strong>计划</strong></p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> 完成lab5</li>
+</ul>
+<p><strong>记录</strong></p>
+<p><strong>感受</strong></p>
+<p>所有实验全部完成，收获真的非常大，也开始期待第三阶段的学习<span class="github-emoji"><span>👨🎓</span><img src="https://github.githubassets.com/images/icons/emoji/unicode/1f468-1f393.png?v8" aria-hidden="true" onerror="this.parent.classList.add('github-emoji-fallback')"></span></p>
+</li>
+</ul>
+]]></content>
+  </entry>
+  <entry>
+    <title>2023开源操作系统训练营一二阶段总结</title>
+    <url>/2023/10/24/rcore-summary/</url>
+    <content><![CDATA[<p>感谢老师和助教们贡献了这么好的课程，可以看到付出的努力和心血，所以我也非常重视这一次的训练营。通过这次的训练营，不仅让我在短时间内快速学习使用了Rust，并乘热打铁学习实践了我一直想掌握的OS知识。在阅读文档的时候详略有当，也给出了很多扩展性的知识和难题，不过个人水平太菜并没有深入。只经过短短两周多的学习，已经基本能在脑海中对操作系统有一个较为清晰的概念了。</p>
+
+
+<h3 id="lab1"><a href="#lab1" class="headerlink" title="lab1"></a>lab1</h3><p>要求我们实现一个sys_task_info的系统调用，用于获取进程的信息。这个系统调用，我分为两步来完成：第一步，能够返回task运行总时间，即第一次执行时间到当前时间的时间差，单位为ms，要实现这个功能，我在TaskControlBlock结构体中添加了我需要的开始时间戳，然后在第一次run该task的时候，记录开始时间戳，然后在sys_task_info中，通过current_task，找到对应的TaskControlBlock，然后计算时间差，返回即可。第二步，能够统计task的sys_call的调用次数，同上，我在TaskControlBlock结构体中添加了我需要的sys_call调用次数，然后在每次调用sys_call的时候，增加该系统调用的调用次数即trap_handler中抓取到系统调用的中断处理时处理即可，然后在sys_task_info中，通过current_task，找到对应的TaskControlBlock，然后返回即可。</p>
+<h3 id="lab2"><a href="#lab2" class="headerlink" title="lab2"></a>lab2</h3><p>要求重写sys_get_time 和 sys_task_info两个系统调用，由于引入虚存机制后，要想将数据写入任务地址空间，就需要根据任务的pagetable手动映射到实际物理地址，然后再写入，然后考虑到数据可能被被两个物理页分隔，所以需要特殊处理是否缺页的情况，特别需要注意的点是get_time最好统一使用us。 要求实现mmap 和munmap在内存中映射文件，实现过程是先获取该任务的memery_set，然后我这里的实现比较傻，是每个area存一个page，然后通过调用memery_set提供的函数，来实现，值得注意的几个点就是_port与MapPermission不同，并且需要增加MapPermission::U。</p>
+<h3 id="lab3"><a href="#lab3" class="headerlink" title="lab3"></a>lab3</h3><p>要求在新增进程功能下，不仅让代码能通过之前的测试，还要新实现sys_spawn,以及进程调度算法，我在让代码能通过之前的测试时，对之前的功能改进了一下结构，由于对于Arc的理解加深了，所以很多代码看着就明白了很多。要实现sys_spawn，就是参考fork以及exec的实现步骤，实现一个spawn，然后在sys_spawn中，调用spawn。然后实现stride调度算法，我在TaskControlBlockInner中添加了stride以及pass字段，并在config中设置BIG_STRIDE为1&lt;&lt;20， 然后在调度算法中，就是找到pass最小的task，然后fetch，然后更新pass，然后返回即可。</p>
+<h3 id="lab4"><a href="#lab4" class="headerlink" title="lab4"></a>lab4</h3><p>要求在新增进程功能下，不仅让代码能通过之前的测试，还要在新增的文件系统下，增加sys_linkat, sys_unlinkat, sys_stat三个系统调用。linkat实现一个硬链接，说白了就是在root_inode下增加一个dirnet具有不同的name以及相同的inode_id让其都指向相同的硬盘文件。unlinkat，同理就是删除一个dirnet，特别需要注意的是当count为0的时候，需要clear该inode。最后sys_stat就是需要count硬链接的数目，以及通过inode的block_id以及block_offset生成所需的inode_id，然后将这些信息写入用户地址空间的_st，这边_fd是一个dyn引用，所以我这边的处理是在unsafe下获得raw_ref，然后在从raw_ref转换到Arc<osinode>,这样整个实验就结束了。</osinode></p>
+<h3 id="lab5"><a href="#lab5" class="headerlink" title="lab5"></a>lab5</h3><p>最后一个实验，增加了线程的概念，以及线程间互斥锁以及信号量的内容，条件变量由于实验没有涉及到，还不是很了解。实验不要求合并之前的功能，但是我们通过测试用例发现，程序会调用到sys_get_time函数，而这个函数是没有被实现的，这个需要注意，然后就是本次实验的重点：实现死锁检测。在仔细阅读全部的代码后，想到的办法就是将available数组设置在process中，而alloc数组以及need数组由线程来保管，具体数据在对应的lock以及unlock或者up以及down中进行维护，然后增加process的check方法，来进行死锁判断。</p>
+]]></content>
+      <categories>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>rcore</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>vim笔记</title>
+    <url>/2023/09/19/vim%E7%AC%94%E8%AE%B0/</url>
+    <content><![CDATA[<h2 id="What-is-Vim"><a href="#What-is-Vim" class="headerlink" title="What is Vim"></a>What is Vim</h2><h2 id="Vim的模式"><a href="#Vim的模式" class="headerlink" title="Vim的模式"></a>Vim的模式</h2><ul>
+<li>命令模式</li>
+<li>插入模式</li>
+<li>可视模式</li>
+<li>命令行模式</li>
+</ul>
+<h2 id="Vim的基本操作"><a href="#Vim的基本操作" class="headerlink" title="Vim的基本操作"></a>Vim的基本操作</h2><ol>
+<li><p>移动光标</p>
+<ul>
+<li>h,j,k,l, 或者上下左右键</li>
+<li>w移动到下一个单词开头</li>
+<li>e移动到下一个单词末尾</li>
+<li>b移动到上一个单词开头</li>
+<li>0移动到行首</li>
+<li>$移动到行尾<ul>
+<li>在动作前加上数字，表示重复次数，e.g. 3w表示向后移动3个单词</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>删除</p>
+<ul>
+<li>x删除光标所在的字符</li>
+<li>删除操作符d格式<br>  d motion, 其中d为删除操作符，motion为操作符的操作对象, e.g.  <ul>
+<li>w从光标位置直到下一个单词开头，不包括第一个字符</li>
+<li>e从光标位置删除到单词末尾，包括最后一个字符</li>
+<li>$从光标位置删除到行尾</li>
+</ul>
+</li>
+<li>d$从光标位置删除到行尾</li>
+<li>dd删除整行, 2dd删除两行</li>
+</ul>
+</li>
+<li><p>添加</p>
+<ul>
+<li>normal模式下，i在光标所在位置插入，a在行尾插入</li>
+<li>A在行尾插入</li>
+<li>o在光标所在行的下一行插入新行，并进入插入模式</li>
+<li>O在光标所在行的上一行插入新行，并进入插入模式</li>
+</ul>
+</li>
+<li><p>撤销</p>
+<ul>
+<li>u撤销上一步操作</li>
+<li>U撤销对整行的操作</li>
+<li>ctrl+r重做上一步被撤销的操作</li>
+</ul>
+</li>
+<li><p>置入</p>
+<ul>
+<li>p将最后一次删除的内容置入光标后<ul>
+<li>如果删除的是整行，则置入在下一行, e.g. dd, p</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>替换</p>
+<ul>
+<li>r替换光标所在位置的字符</li>
+<li>R进入替换模式，替换光标所在位置的字符,连续替换</li>
+<li>c : c [number] motion<ul>
+<li>ce, c为删除操作符，e为操作对象，即从光标位置删除到单词末尾，然后进入插入模式</li>
+</ul>
+</li>
+<li>:s<ul>
+<li>:s/old/new/g</li>
+<li>:s/old/new/gc</li>
+<li>:%s/old/new/g</li>
+<li>:%s/old/new/gc</li>
+<li>:%s/</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>跳转</p>
+<ul>
+<li>gg跳转到文件开头</li>
+<li>G跳转到文件末尾</li>
+<li>:n跳转到第n行</li>
+<li>ctrl+g显示当前光标所在行的行号和文件信息</li>
+</ul>
+</li>
+<li><p>搜索类命令</p>
+<ul>
+<li>/pattern向后搜索pattern</li>
+<li>?pattern向前搜索pattern</li>
+<li>n向后搜索下一个匹配的pattern</li>
+<li>N向前搜索下一个匹配的pattern</li>
+<li>%匹配括号的查找</li>
+</ul>
+</li>
+<li><p>在VIM中执行外部命令</p>
+<ul>
+<li>:!command</li>
+</ul>
+</li>
+<li><p>复制粘贴</p>
+<ul>
+<li>使用操作符 y 复制，p粘贴</li>
+</ul>
+</li>
+</ol>
+<h2 id="Vim的配置"><a href="#Vim的配置" class="headerlink" title="Vim的配置"></a>Vim的配置</h2><ol>
+<li>~/.vimrc 文件</li>
+</ol>
+<h2 id="Vim的使用"><a href="#Vim的使用" class="headerlink" title="Vim的使用"></a>Vim的使用</h2><h2 id="Vim的问题"><a href="#Vim的问题" class="headerlink" title="Vim的问题"></a>Vim的问题</h2><h2 id="Vim的优点"><a href="#Vim的优点" class="headerlink" title="Vim的优点"></a>Vim的优点</h2><h2 id="Vim的发展"><a href="#Vim的发展" class="headerlink" title="Vim的发展"></a>Vim的发展</h2><p>a nice day!</p>
+]]></content>
+      <categories>
+        <category>学习</category>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>笔记</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>同步与版本控制实现</title>
+    <url>/2022/10/15/%E5%A4%9A%E8%AE%BE%E5%A4%87%E5%90%8C%E6%AD%A5%E4%B8%8E%E7%89%88%E6%9C%AC%E6%8E%A7%E5%88%B6%E5%AE%9E%E7%8E%B0/</url>
+    <content><![CDATA[<h2 id="环境要求"><a href="#环境要求" class="headerlink" title="环境要求"></a>环境要求</h2><p>已经能正常使用和deploy的hexo仓库，一个GitHub账号，对Git使用较为熟悉。</p>
+<h2 id="使用网盘同步"><a href="#使用网盘同步" class="headerlink" title="使用网盘同步"></a>使用网盘同步</h2><p>Google Drive or one Drive</p>
+
+
+<h2 id="使用GitHub进行同步"><a href="#使用GitHub进行同步" class="headerlink" title="使用GitHub进行同步"></a>使用GitHub进行同步</h2><p>使用分支搭建博客, master 分支用于存放博客源文件, hexo 分支用于存放博客生成文件。</p>
+<h2 id="在新设备中安装node-js和Git"><a href="#在新设备中安装node-js和Git" class="headerlink" title="在新设备中安装node.js和Git"></a>在新设备中安装node.js和Git</h2><p>install npm and Git</p>
+<h2 id="给新设备添加SSH-KEYS"><a href="#给新设备添加SSH-KEYS" class="headerlink" title="给新设备添加SSH KEYS"></a>给新设备添加SSH KEYS</h2><p>在Git Bash中输入：<br><code>ssh-keygen -t rsa -C “你的邮箱地址”</code><br>按三次回车（密码为空），生成密匙。<br>在C:\Users\Administrator.ssh中（Administrator为自己对应的管理员账号），得到两个文件，分别为id_rsa和id_rsa.pub。<br>打开id_rsa.pub，复制全文。进入GitHub中的SSH设置 ，Add SSH key，粘贴进去。</p>
+<h2 id="新设备同步"><a href="#新设备同步" class="headerlink" title="新设备同步"></a>新设备同步</h2><ol>
+<li><p>使用<code>git clone git@github.com:YXalix/YXalix.github.io.git</code>拷贝仓库（默认分支为master)</p>
+</li>
+<li><p>在本地得到的youraccount.github.io文件夹下通过Git bash依次执行下列指令：  </p>
+<p> <code>npm install -g hexo</code>、<code>npm install</code>、<code>npm install hexo-deployer-git</code>即可将最新的博客文件全部同步。</p>
+</li>
+<li><p>主题themes同步</p>
+<p> <code>https://github.com/YXalix/icarus.git</code>拷贝仓库到youraccount.github.io文件夹下的themes中</p>
+</li>
+</ol>
+<h2 id="问题"><a href="#问题" class="headerlink" title="问题"></a>问题</h2><ol>
+<li><p>node版本不一致所导致，可以使用node版本管理工具nvm, n进行管理</p>
+<ul>
+<li><code>nvm ls</code>查看已安装的node版本, <code>nvm install v14.17.6</code>安装指定版本, <code>nvm use v14.17.6</code>使用指定版本</li>
+<li><code>n ls</code> 查看已安装的node版本, <code>n stable</code>安装最新稳定版本, <code>n latest</code>安装最新版本</li>
+<li><code>nvm alias default V14.20.1 </code> 设置默认npm版本</li>
+</ul>
+</li>
+</ol>
+<h2 id="日常维护"><a href="#日常维护" class="headerlink" title="日常维护"></a>日常维护</h2><ol>
+<li><p>依次执行<code>git add .</code>、<code>git commit -m “…”</code>、<code>git push origin hexo</code>指令将改动推送到GitHub（此时当前分支应为hexo）</p>
+</li>
+<li><p>执行<code>hexo generate -d</code>发布网站到main分支上</p>
+</li>
+<li><p>新建文章</p>
+<p> <code>hexo new [layout] title</code> 或 <code>hexo n [layout] title</code></p>
+</li>
+</ol>
+<h2 id="图床设置"><a href="#图床设置" class="headerlink" title="图床设置"></a>图床设置</h2><h2 id="Github-Actions-自动部署"><a href="#Github-Actions-自动部署" class="headerlink" title="Github Actions 自动部署"></a>Github Actions 自动部署</h2><p>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</p>
+<p>a nice try!</p>
+]]></content>
+      <categories>
+        <category>环境配置</category>
+      </categories>
+      <tags>
+        <tag>hexo</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>服务器使用指南</title>
+    <url>/2023/11/09/%E5%AE%9E%E9%AA%8C%E5%AE%A4%E6%9C%8D%E5%8A%A1%E5%99%A8%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97/</url>
+    <content><![CDATA[<h3 id="VNC使用"><a href="#VNC使用" class="headerlink" title="VNC使用"></a>VNC使用</h3><ol>
+<li>开启一个服务：vncserver -localhost no</li>
+<li>列出所有服务：vncserver -list</li>
+<li>删除一个服务：vncserver -kill :[ID]</li>
+<li>当出现login输入密码卡住的情况<ol>
+<li>查看当前：sudo loginctl list-sessions</li>
+<li>解锁当前session：sudo loginctl unlock-session [ID]</li>
+</ol>
+</li>
+</ol>
+<h3 id="SSH连接"><a href="#SSH连接" class="headerlink" title="SSH连接"></a>SSH连接</h3><ol>
+<li>免密登陆<ol>
+<li>生成SSH密钥对：ssh-keygen -t rsa -b 2048</li>
+<li>将公钥复制到目标服务器：ssh-copy-id user@hostname</li>
+<li></li>
+</ol>
+</li>
+</ol>
+]]></content>
+  </entry>
+  <entry>
+    <title></title>
+    <url>/2023/11/09/%E5%BC%95%E7%94%A8/</url>
+    <content><![CDATA[<p>[1] M. Cui, G. Zhang and R. Zhang, “Secure Wireless Communication via Intelligent Reflecting Surface,” in IEEE Wireless Communications Letters, vol. 8, no. 5, pp. 1410-1414, Oct. 2019, doi: 10.1109/LWC.2019.2919685.</p>
+<p>[2] J. Chen, Y. -C. Liang, Y. Pei and H. Guo, “Intelligent Reflecting Surface: A Programmable Wireless Environment for Physical Layer Security,” in IEEE Access, vol. 7, pp. 82599-82612, 2019, doi: 10.1109/ACCESS.2019.2924034.</p>
+<p>[3] X. Guan, Q. Wu and R. Zhang, “Intelligent Reflecting Surface Assisted Secrecy Communication: Is Artificial Noise Helpful or Not?,” in IEEE Wireless Communications Letters, vol. 9, no. 6, pp. 778-782, June 2020, doi: 10.1109/LWC.2020.2969629.</p>
+<p>[4] J. Bai, H. -M. Wang and P. Liu, “Robust IRS-Aided Secrecy Transmission With Location Optimization,” in IEEE Transactions on Communications, vol. 70, no. 9, pp. 6149-6163, Sept. 2022, doi: 10.1109/TCOMM.2022.3193404.</p>
+<p>[5] Z. Li, M. Hua, Q. Wang and Q. Song, “Weighted Sum-Rate Maximization for Multi-IRS Aided Cooperative Transmission,” in IEEE Wireless Communications Letters, vol. 9, no. 10, pp. 1620-1624, Oct. 2020, doi: 10.1109/LWC.2020.2999356.</p>
+<p>[6] J. Li, L. Zhang, K. Xue, Y. Fang and Q. Sun, “Secure Transmission by Leveraging Multiple Intelligent Reflecting Surfaces in MISO Systems,” in IEEE Transactions on Mobile Computing, vol. 22, no. 4, pp. 2387-2401, 1 April 2023, doi: 10.1109/TMC.2021.3114167.</p>
+<p>[7] H. Yang et al., “Intelligent Reflecting Surface Assisted Anti-Jamming Communications: A Fast Reinforcement Learning Approach,” in IEEE Transactions on Wireless Communications, vol. 20, no. 3, pp. 1963-1974, March 2021, doi: 10.1109/TWC.2020.3037767.</p>
+<p>[8] Y. Sun, K. An, J. Luo, Y. Zhu, G. Zheng and S. Chatzinotas, “Intelligent Reflecting Surface Enhanced Secure Transmission Against Both Jamming and Eavesdropping Attacks,” in IEEE Transactions on Vehicular Technology, vol. 70, no. 10, pp. 11017-11022, Oct. 2021, doi: 10.1109/TVT.2021.3104580.</p>
+<p>[9] Y. Sun et al., “RIS-Assisted Robust Hybrid Beamforming Against Simultaneous Jamming and Eavesdropping Attacks,” in IEEE Transactions on Wireless Communications, vol. 21, no. 11, pp. 9212-9231, Nov. 2022, doi: 10.1109/TWC.2022.3174629.</p>
+<p>[10] M. -M. Zhao, Y. Cai and R. Zhang, “Intelligent Reflecting Surface Aided Wireless Information Surveillance,” in IEEE Transactions on Wireless Communications, vol. 22, no. 2, pp. 1219-1234, Feb. 2023, doi: 10.1109/TWC.2022.3203413.</p>
+<p>[11] F. Chen, H. Lu, Y. Wang and C. Zhang, “Secure mmWave MIMO Communication against Signal Leakage When Meeting Illegal Reconfigurable Intelligent Surface,” 2023 IEEE Wireless Communications and Networking Conference (WCNC), Glasgow, United Kingdom, 2023, pp. 1-6, doi: 10.1109/WCNC55385.2023.10118920.</p>
+<p>[12] B. Lyu, D. T. Hoang, S. Gong, D. Niyato and D. I. Kim, “IRS-Based Wireless Jamming Attacks: When Jammers Can Attack Without Power,” in IEEE Wireless Communications Letters, vol. 9, no. 10, pp. 1663-1667, Oct. 2020, doi: 10.1109/LWC.2020.3000892.</p>
+]]></content>
+  </entry>
+  <entry>
+    <title>矩阵论笔记</title>
+    <url>/2022/10/15/%E7%9F%A9%E9%98%B5%E8%AE%BA%E7%AC%94%E8%AE%B0/</url>
+    <content><![CDATA[<h2 id="矩阵论复习笔记"><a href="#矩阵论复习笔记" class="headerlink" title="矩阵论复习笔记"></a><center><font face="黑体" size="5">矩阵论复习笔记</font></center></h2><center><font face="楷体">修改时间：</font><font face="times new roman">2022.12.26</font>  <font face="times new roman">E-mail: zhouhaipeng@nuaa.edu.cn</font></center>
+
+<h2 id="1-线性空间与线性变换"><a href="#1-线性空间与线性变换" class="headerlink" title="1. 线性空间与线性变换"></a><font size="4">1. 线性空间与线性变换</font></h2><p>（1）<strong>线性空间</strong>的定义：</p>
+<blockquote>
+<p>以$\alpha, \beta, \gamma,…$为元素的非空集合$V$，数域$F$，定义<strong>两种运算</strong>：==加法==$\forall \alpha , \beta \in V, ; \alpha + \beta \in V$；==数乘==$\forall k \in F, \alpha \in V, k \alpha \in V$。<strong>满足8条：<font color="blue">加法交换律、加法结合律、数乘结合律、两个分配律，0元存在，1元存在，负元存在</font>。称 $V$为数域$F$上的线性空间</strong>。</p>
+</blockquote>
+<hr>
+
+
+<p>（2）证明一组向量是线性空间的基，两步走：</p>
+<ul>
+<li>证明这组向量线性无关；</li>
+<li>证明线性空间任意向量可由这组向量表示。</li>
+</ul>
+<hr>
+<p>（3）如果${E_{ij}, i=1,2,…,m;j=1,2,…,n}$是矩阵空间$R^{m \times n}$的一组基，则$\dim R^{m \times n} = m \times n$。</p>
+<blockquote>
+<p><strong><font color="red">注：</font>这里有前提条件，实际上$\dim R^{m \times n}$并不是总等于$m \times n$，如2015年填空题第2题</strong>。</p>
+</blockquote>
+<hr>
+<p>（4）$\alpha_1, \alpha_2, …, \alpha_n$是线性空间$V_n(F)$的一组基，对于$\forall \beta \in V$,<br>$$<br>\beta = (\alpha_1 ; \alpha_2 ; … ; \alpha_n)<br>\begin{bmatrix}<br>x_1\<br>x_2\<br>…\<br>x_n<br>\end{bmatrix}<br>= (\alpha_1 ; \alpha_2 ; … ; \alpha_n)X<br>$$<br>其中$X$称为向量$\beta$在基$(\alpha_1 ; \alpha_2 ; … ; \alpha_n)$下对应的坐标。</p>
+<p> $V_n(F)$中向量组${\beta_1 ; \beta_2 ; … ; \beta_m}$线性相关的充要条件是坐标向量组${X_1,X_2,…,X_m}$是线性相关组。</p>
+<hr>
+<p>（5）设$(\alpha_1 ; \alpha_2 ; … ; \alpha_n)$和$(\beta_1 ; \beta_2 ; … ; \beta_n)$是$n$维线性空间$V_n(F)$中的两组基，则有$C\in F^{m \times n}$<br>$$<br>(\beta_1 ; \beta_2 ; … ; \beta_n) = (\alpha_1 ; \alpha_2 ; … ; \alpha_n)C<br>$$<br>其中$C$称为从基设$(\alpha_1 ; \alpha_2 ; … ; \alpha_n)$到$(\beta_1 ; \beta_2 ; … ; \beta_n)$的<strong>过渡矩阵</strong>。</p>
+<blockquote>
+<p><strong><font color="red">重要推论：</font>如果向量$\alpha \in V_n(F)$，$\alpha$在两组基下对应坐标分别是$X$和$Y$，则有</strong>： </p>
+</blockquote>
+<p>$$<br>\alpha = (\alpha_1 ; \alpha_2 ; … ; \alpha_n)X<br>$$</p>
+<p>$$<br>\alpha = (\beta_1 ; \beta_2 ; … ; \beta_n)Y<br>$$</p>
+<blockquote>
+<p>**显然有：$\color{red}{X = CY}$**。</p>
+</blockquote>
+<hr>
+<p>（6）设$W$是线性空间$V_n(F)$的非空子集合，则$W$是$V_n(F)$的子空间的充要条件是：</p>
+<ul>
+<li><strong>若$\alpha, \beta \in W$，则$\alpha + \beta \in W$</strong></li>
+<li><strong>若$\alpha \in W, ; k \in F$，则$k \alpha \in W$</strong></li>
+</ul>
+<p>也就是说只需要验证<strong>对加法和数乘封闭</strong>即可。</p>
+<hr>
+<p>（7）设$W_1, ; W_2$是线性空间$V$的子空间，则：</p>
+<ul>
+<li>$W_1$与$W_2$的<strong>交空间</strong>为：$W_1 \cap W_2 = { \alpha | \alpha \in W_1 ; and ; \alpha \in W_2 }$</li>
+<li>$W_1$与$W_2$的<font color="blue"><strong>和空间</strong></font>为：$W_1 + W_2 = { \alpha | \alpha = \alpha_1 + \alpha_2, ; \alpha_1 \in W_1, ; \alpha_2 \in W_2 }$</li>
+</ul>
+<blockquote>
+<p><strong>两个重要的维数公式</strong></p>
+</blockquote>
+<ul>
+<li>$\dim (W_1 \cap W_2) \leqslant \dim W_i \leqslant \dim(W_1 + W_2) \leqslant \dim V$</li>
+<li>$\dim W_1 + \dim W_2  = \dim (W_1 + W_2) + \dim(W_1 \cap W_2)$</li>
+</ul>
+<blockquote>
+<p>**<font color="red">直和子空间：</font>如果$W = W_1 + W_2$，并且$W_1  \cap W_2 = {0}$，那么称$W$是$W_1$与$W_2$的直和子空间，表示为$W = W_1 \oplus W_2$**。	</p>
+</blockquote>
+<blockquote>
+<p><strong><font color="red">直和补子空间：</font>对$n$维空间$V$的任何子空间$W$，设$\alpha_1, …,\alpha_r$为$W$的基，$r &lt; n $，把它们扩充为$V$的基</strong>${\alpha_1, …,\alpha_r; \beta_{r+1}, …, \beta_n}, \quad U = L{\beta_{r+1}, …, \beta_n }$，<strong>有$V = W \oplus U$成立，则称$U$是$W$的直和补子空间</strong>。</p>
+</blockquote>
+<hr>
+<p>（8）若$(\alpha_1 ; \alpha_2 ; … ; \alpha_n)$是线性空间$V_n(F)$的一组基，则<br>$$<br>V_n(F) = L {\alpha_1, \alpha_2, .., \alpha_n}<br>$$</p>
+<p> 对一个矩阵$A \in F^{m \times n}$，可以得到两个与$A$相关的子空间：<br>$$<br>N(A) = {X |AX=0 } \subseteq F^n<br>$$</p>
+<p>$$<br>R(A) = L{A_1, A_2, …,A_n } \subseteq F^m<br>$$</p>
+<p>其中$N(A)$称为矩阵$A$的<strong>零空间</strong>，$R(A)$称为矩阵$A$的<strong>列空间</strong>。</p>
+<hr>
+<p>（9）内积：</p>
+<ul>
+<li><strong>欧氏空间的内积</strong>：$(\alpha, \beta) = \alpha^T \beta ; \quad (A, B) = tr(AB^T)$</li>
+<li><strong>酉空间的内积</strong>：$(\alpha, \beta) = \beta^H \alpha ; \quad (A, B) = tr(B^HA)$</li>
+</ul>
+<blockquote>
+<p>柯西不等式：$|(\alpha, \beta)|^2 \leqslant (\alpha, \alpha)(\beta, \beta)$</p>
+</blockquote>
+<blockquote>
+<p><strong><font color="red">正交补子空间：</font>设$U$为内积空间$V_n(F)$的一个子空间，定义$V_n(F)$上的一个子集$U^{\perp} = {\alpha  ;| ;\alpha \in V_n(F), ; \forall \beta \in U, ; (\alpha, \beta)=0 }$称为$U$的正交补子空间</strong>，有$V_n(F) = U \oplus U^{\perp}$。</p>
+</blockquote>
+<hr>
+<p>（10）设$T$是线性空间$V_n(F)$上的线性变换，则满足$T(k_1 \alpha_1 + k_2 \alpha_2) = k_1 T(\alpha_1) + k_2 T(\alpha_2)$，则有：</p>
+<blockquote>
+<p><strong><font color="red">像空间</font>：$R(T) = {\beta | ; \exists \alpha \in V_n(F), s.t. ; \beta = T(\alpha)}$是$V_n(F)$上的子空间，称为$T$的像空间；$\dim R(T)$称为$T$的<font color="blue">秩</font>。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong><font color="red">零空间</font>：$N(T) = {\alpha |; T(\alpha) = 0}$是$V_n(F)$上的子空间，称为$T$的零空间；$\dim N(T)$称为$T$的<font color="blue">零度</font>。</strong></p>
+</blockquote>
+<hr>
+<p>（11）设$T$为$V_n(F)$上的线性变换，${\alpha_1, \alpha_2, …, \alpha_n}$是$V_n(F)$的基，若存在$n$阶方阵$A$，有：<br>$$<br>T(\alpha_1 ; \alpha_2 ; … ; \alpha_n) = (\alpha_1 ; \alpha_2 ; … ; \alpha_n)A<br>$$<br>称$A$为$T$在基${\alpha_1, \alpha_2, …, \alpha_n}$下的矩阵。</p>
+<ul>
+<li><p>设$\alpha$与$T(\alpha)$在基${\alpha_1, \alpha_2, … , \alpha_n}$下的坐标分别是$X$与$Y$，则有：**${\color {red}{ Y = AX}}$**。</p>
+</li>
+<li><p>设${\alpha_1, \alpha_2, … , \alpha_n}$和${\beta_1, \beta_2, … , \beta_n}$是$V_n(F)$的两组基，且有$(\beta_1 ; \beta_2 ; … ; \beta_n) = (\alpha_1 ; \alpha_2 ; … ; \alpha_n)C$；$T$在两组基下的变换矩阵分别是$A$与$B$，则**${\color{red} {B=C^{-1}AC}}$**。</p>
+</li>
+</ul>
+<hr>
+<p>（12）设$T$是线性空间$V_n(F)$上的线性变换，$W$是$V_n(F)$的子空间，如果$\forall \alpha \in W, ; T(\alpha) \in W$，即值域$T(W) \subseteq W$，则称$W$是$T$的<strong>不变子空间</strong>。</p>
+<blockquote>
+<p><font color="red"><strong>重要例题</strong></font> <br> <br><strong>设$T$是欧式空间$R^3$上的线性变换，对$R^3$中单位矢量$u$，$\forall x \in R^3$，$T(x) = x - (1-k)(x,u)u$，问：T的不变子空间的直和分解以及相应的矩阵分解。</strong></p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p>答：对向量$u$有<br>$$T(u) = u - (1-k)(u,u)u= u - (1-k)u = ku$$<br>所以以$u$为基向量的空间是不变子空间，表示为$L{u}$；<br>同理，对于$u$的正交补子空间$u^{\perp}$，对于任意向量$X \in u^{\perp}$，有<br>$$T(X) = X - (1-k)(X,u)u = X-0=X$$<br>于是另一个不变子空间为$u^{\perp}$；即$R^3 = L{u} \oplus u^{\perp}$。<br><br>显然有$L{u}$是一维空间，特征值$k$对应的特征向量是$u_1 = u$；那么$u^{\perp}$就是二维空间，特征值$1$对应两个线性无关的特征向量，可以找到两个单位正交特征向量$u_2, u_3$，所以相应的矩阵分解为$\begin{bmatrix}k &amp;  &amp; \ &amp; 1 &amp; \ &amp;  &amp; 1\end{bmatrix}$ ，对应的特征向量组 ${u_1,u_2,u_3}$为标准正交基。</p>
+</blockquote>
+</blockquote>
+<hr>
+<p>（13）**<font color="red">正交变换（酉变换）：</font>线性变换$T$不改变向量内积，即$(T(\alpha), T(\beta)) = (\alpha, \beta)$**。</p>
+<ul>
+<li>正交变换$T$关于任一标准正交基的矩阵$C$满足$C^TC = CC^T=I$；酉变换关于任一标准正交基的矩阵$U$满足$U^HU=UU^H=I$。</li>
+<li>正交矩阵的行列式为$\pm 1$；酉矩阵的行列式的模长为$1$。</li>
+</ul>
+<hr>
+<p>（14）<strong>常见的正交变换</strong></p>
+<ul>
+<li><p>$R^2$上<strong>绕原点逆时针旋转$\theta$角的线性变换$T_{\theta}$称为<em>正交变换</em></strong>，在标准正交基下对应的变换矩阵$\begin{bmatrix} \cos \theta &amp;  - \sin \theta \ \sin \theta &amp; \cos \theta \end{bmatrix}$是<strong>正交矩阵</strong>。</p>
+</li>
+<li><p>空间$R^3$上<strong>绕过原点的直线$l$旋转$\theta$角的变化$T_{L_{\theta}}$为<em>正交变换</em></strong>，在标准正交基下对应的变换矩阵$\begin{bmatrix}1 &amp;  &amp; \ &amp; \cos \theta &amp; -\sin \theta \ &amp; \sin \theta &amp; \cos \theta \end{bmatrix}$是<strong>正交矩阵</strong>。</p>
+</li>
+</ul>
+<hr>
+<h1 id="2-Jordan标准形"><a href="#2-Jordan标准形" class="headerlink" title="2. Jordan标准形"></a><font size="4">2. Jordan标准形</font></h1><p>（1）若有$T(\xi) = \lambda \xi$，称$\lambda$为$T$的特征值，$\xi$为$T$的特征向量。如果$A$是线性变换$T$对应的矩阵，那么，$\lambda$和$\xi$也是$A$的特征值和特征向量。</p>
+<hr>
+<p>（2）设$\lambda_1, \lambda_2, …, \lambda_s$是$V_n(F)$上线性变换$T$的$s$个互异特征值，$V_{\lambda_i}$是$\lambda_i$的<strong>特征子空间</strong>，其中$i=1,2,…,s$，则：</p>
+<ul>
+<li>$V_{\lambda_i}$是$T$的<strong>不变子空间</strong>；</li>
+<li>$\lambda_i \neq \lambda_j$时，$V_{\lambda_i} \cap V_{\lambda_j} = {0}$；</li>
+<li>若$\lambda_i$是$k_i$重（<em>代数重数</em>）的，$\dim V_{\lambda_i}$是<em>几何重数</em>，则有$\dim V_{\lambda_i} \leqslant k_i$。</li>
+</ul>
+<hr>
+<p>（3）线性变换$T$有对角矩阵表示的充分必要条件是 <strong>$T$有$n$个线性无关的特征向量</strong>。</p>
+<blockquote>
+<p><strong><font color="red">幂等矩阵：</font>$A^2 = A$，$A$相似于对角矩阵$\begin{bmatrix} I_r&amp; \ &amp; 0\end{bmatrix}$，其中$r$为矩阵$A$的秩。</strong></p>
+</blockquote>
+<blockquote>
+<p><strong><font color="red">乘方矩阵：</font>$A^2 = I$，$A$相似于对角阵$\begin{bmatrix}I_s &amp; \ &amp; I_t\end{bmatrix}$，其中$s+t=n$。</strong></p>
+</blockquote>
+<hr>
+<p>（4）关于秩的不等式：</p>
+<p>$$rank(A \pm B) \leqslant rank(A) + rank(B)$$</p>
+<p>$$rank(A) + rank(B) -n \leqslant rank(A_{m \times n}B_{n \times m}) \leqslant \min(r(A), r(B)) $$</p>
+<p>$$if ;A_{m \times n}B_{n \times m}=0, \quad rank(A) + rank(B) \leqslant n$$</p>
+<hr>
+<p>（5）形如$J(\lambda) = \begin{bmatrix}\lambda &amp; 1 &amp;  &amp; \  &amp; \lambda &amp; 1 &amp; \ &amp;  &amp; … &amp; 1\ &amp;  &amp;  &amp; \lambda\end{bmatrix}$，称为<strong>Jordan块</strong>。Jordan块呈上三角，主对角线是它的全部特征值，特点是<strong>主对角线上元素相等，紧邻上方元素$a_{i,i+1} = 1$，其余元素为0</strong>。</p>
+<hr>
+<p>（6）每个$n$阶方阵$A$都相似于一个Jordan矩阵，即存在可逆矩阵$P$，有：<br>$$<br>P^{-1}AP = J_A = \begin{bmatrix}<br>J_1(\lambda_1) &amp;  &amp;  &amp; \<br> &amp; J_2(\lambda_2) &amp;  &amp; \<br> &amp;  &amp; … &amp; \<br> &amp;  &amp;  &amp; J_s(\lambda_s)<br>\end{bmatrix}<br>$$<br>其中$J_A$称为<strong>Jordan标准形</strong>。</p>
+<hr>
+<p>（7）<strong>Jordan标准形</strong>的求法：</p>
+<ul>
+<li><p>求矩阵$A$的特征多项式$|\lambda I-A| = (\lambda - \lambda_1)^{k_1}(\lambda-\lambda_2)^{k_2}…(\lambda - \lambda_s)^{k_s}$，其中$k_i$是特征值$\lambda_i$的<strong>代数重数，决定了对角线上特征值$\lambda_i$的个数</strong>；</p>
+</li>
+<li><p>对$\lambda_i$，由$(A-\lambda_i I)X=0$，求$A$的<strong>线性无关的特征向量</strong>$\alpha_1,\alpha_2, …,\alpha_{t_i}$，其中$t_i$是特征值$\lambda_i$的<strong>几何重数，决定了Jordan块的个数</strong>；</p>
+<ul>
+<li>如果$k_i = t_i$，即<strong>代数重数等于几何重数</strong>，说明$\lambda_i$对应的Jordan块是对角阵；</li>
+<li>如果$t_i &lt; k_i$，就选择合适的特征向量$\alpha_j$，利用**${\color{red} {|A-\lambda_i I| = \alpha_j}}$求Jordan链**，确定每一个小Jordan块的阶数。</li>
+</ul>
+</li>
+<li><p>将所有特征值$\lambda_i$对应的Jordan块组合起来，形成Jordan矩阵$J_A$。</p>
+</li>
+</ul>
+<hr>
+<p>（8）<strong>矩阵多项式</strong>可以表示为$g(A) = a_m A^m + a_{m-1}A^{m-1}+…+a_1A +a_0 I $，由于有$A = P J_AP^{-1}$，所以有：</p>
+<p>$$<br>g(A) = P \begin{bmatrix}<br>g(J_1(\lambda_1)) &amp;  &amp;  &amp; \<br> &amp; g(J_2(\lambda_2)) &amp;  &amp; \<br> &amp;  &amp; … &amp; \<br> &amp;  &amp;  &amp; g(J_s(\lambda_s))<br>\end{bmatrix} P^{-1}<br>$$<br>而对于$g(J(\lambda))$则有：<br>$$<br>g(J(\lambda)) = \begin{bmatrix}<br>g(\lambda) &amp; g’(\lambda) &amp; … &amp; \frac{g^{(r-1)}(\lambda)}{(r-1)!} \<br> &amp; g(\lambda) &amp; … &amp; .\<br> &amp;  &amp; … &amp; .\<br> &amp;  &amp;  &amp; g(\lambda)<br>\end{bmatrix}<br>$$<br>对于<font color="blue"><strong>常用的幂指数形式</strong></font>有：<br>$$<br>J^k(\lambda) = \begin{bmatrix}<br>\lambda^k &amp; \frac{(\lambda^k)’}{1!} &amp; \frac{(\lambda^k)’’}{2!} &amp;… \<br> &amp;  \lambda^k&amp; … &amp; .\<br> &amp;  &amp; … &amp; .\<br> &amp;  &amp;  &amp;  \lambda^k<br>\end{bmatrix}<br>$$</p>
+<hr>
+<p>（9）使$g(A)=0$的多项式$g(\lambda)$称为$A$的<strong>化零多项式</strong>，<strong>特征多项式必是矩阵$A$的化零多项式</strong>。</p>
+<blockquote>
+<p><strong><font color="red">注：</font>化零多项式的根一定包含了所有的特征值，但不能说化零多项式的根一定是特征值</strong>。</p>
+</blockquote>
+<hr>
+<p>（10）对于<strong>最小多项式$m_T(\lambda)$</strong></p>
+<ul>
+<li>$m_T(\lambda)$最高项系数为<code>1</code>；</li>
+<li>$m_T(\lambda)$是$T$的一个化零多项式；</li>
+<li>$m_T(\lambda)$是化零多项式中次数最低的那一个。</li>
+</ul>
+<blockquote>
+<p>**==最小多项式$m_T(\lambda)$的根一定包含了所有的特征值$\lambda_i$，子式$(\lambda-\lambda_i)^{r_i}$的幂$r_i$等于Jordan标准形中关于特征值$\lambda_i$的Jordan块中的最高阶数==**。</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p>比如矩阵$A$有一个代数重数为<code>3</code>的特征值<code>2</code>，该特征值对应两个Jordan块，分别是<br>$\begin{bmatrix}2 &amp; 1  \ &amp; 2   \end{bmatrix}$以及$[2]$， 说明其中其最高阶数为2，那么在最小多项式中对应的子式为$(\lambda -2)^2$。</p>
+</blockquote>
+</blockquote>
+<hr>
+<h1 id="3-矩阵的分解"><a href="#3-矩阵的分解" class="headerlink" title="3. 矩阵的分解"></a><font size="4">3. 矩阵的分解</font></h1><p>（1）<strong>等价标准形</strong></p>
+<p> 对于$A \in C^{m \times n}$，存在可逆矩阵$P \in C^{m \times m}, Q \in C^{n \times n}$，使得</p>
+<p>$$<br>A = P \begin{bmatrix}<br>I_r &amp; 0  \<br>0 &amp; 0<br>\end{bmatrix}Q<br>$$<br>其中$r$是矩阵$A$的秩。</p>
+<hr>
+<p>（2）<strong>相似标准形</strong></p>
+<p> 存在可逆矩阵$P \in C^{ n \times n}$，有<br>$$<br>A = P \begin{bmatrix}<br>\lambda_1 &amp;  &amp;  &amp; \<br> &amp; \lambda_2 &amp;  &amp; \<br> &amp;  &amp; … &amp; \<br> &amp;  &amp;  &amp; \lambda_n<br>\end{bmatrix} P^{-1}<br>$$</p>
+<hr>
+<p>（3）<strong>LU分解</strong></p>
+<blockquote>
+<p>定义：**$L$是下三角矩阵，$U$是上三角矩阵**，$A=LU$。</p>
+</blockquote>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<ul>
+<li>对于$(A ;|; I_n)$，**只用第$i$行乘数$k$加到第$j$行（$i &lt; j$）型初等变换将$A$化为上三角形$U$，可以得到${\color{red} (U ; |; P)}$**；</li>
+<li>**可知$PA=U$，于是有$L=P^{-1}$，则$A=LU$**。</li>
+</ul>
+<hr>
+<p>（4）<strong>LDV分解</strong></p>
+<blockquote>
+<p>定义：$L, V$分别是<strong>对角线元素为1</strong>的下三角矩阵和上三角矩阵，$D$为对角矩阵，$A=LDV$。</p>
+</blockquote>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p><font color="blue"><strong>方法一：</strong></font></p>
+</blockquote>
+</blockquote>
+<ul>
+<li>由LU分解得到$A = LU$；</li>
+<li>通过每行除以对应的对角线上元素的值，<strong>将$U$的对角线元素化为1</strong>，得到$U=DV$；</li>
+<li>有$A=LDV$。</li>
+</ul>
+<blockquote>
+<blockquote>
+<p><font color="blue"><strong>方法二：</strong></font></p>
+</blockquote>
+</blockquote>
+<ul>
+<li><p>取矩阵$A$对角线第一个元素，得到矩阵$A_1=[a_{11}]$，则有$A_1 = L_1D_1V_1 = [1][a_{11}][1]$；</p>
+</li>
+<li><p>取包含对角线前两个元素的二阶矩阵$A_2 = \begin{bmatrix}A_1 &amp; \alpha\ \beta &amp; a_{22}\end{bmatrix}$，则有矩阵$A_2 = L_2 D_2 V_2$，其中$L_2 = \begin{bmatrix}L_1 &amp; 0\ x &amp;  1\end{bmatrix}$，$D_2 = \begin{bmatrix}D_1 &amp; 0\ 0 &amp; d_2\end{bmatrix}$，$V_2 = \begin{bmatrix}V_1 &amp; y\ 0 &amp; 1\end{bmatrix}$，求得未知量$x, d_2, y$；</p>
+</li>
+<li><p>以此类推，最终得到$A = L_n D_n V_n$。</p>
+</li>
+</ul>
+<hr>
+<p>（5）<strong>满秩分解</strong></p>
+<blockquote>
+<p>定义：对于$rank(A)=r$的矩阵$A$，若存在秩为$r$的矩阵$B \in F^{m \times r}, ; C \in F^{r \times n}$，有$A=BC$，称为矩阵$A$的满秩分解。</p>
+</blockquote>
+<blockquote>
+<p>求法：方法较多，一般只用最简单的第3种。</p>
+</blockquote>
+<ul>
+<li>用<strong>行初等变换</strong>把$A$化为Hermite标准形；</li>
+<li>依Hermite标准形中向量$e_i$所在的列的位置第$j_i$列，相应地取出$A$的第$j_i$列$a_{ji}$，得到 $A$的<strong>列向量极大无关组</strong>${a_{j_1}, a_{j_2}, …, a_{j_r}}$，$B =(a_{j_1}, a_{j_2}, …, a_{j_r}) $;</li>
+<li>$A$的Hermite矩阵中的<strong>非零行</strong>构成矩阵$C$，得到满秩分解$A=BC$。</li>
+</ul>
+<blockquote>
+<p>举个例子：</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p>求矩阵$A=\begin{bmatrix}1 &amp; 1 &amp; 2\ 0 &amp; 2 &amp; 2\ 1 &amp; 0 &amp; 1\end{bmatrix}$的满秩分解。</p>
+</blockquote>
+</blockquote>
+<blockquote>
+<blockquote>
+<p>答： 用行初等变换化$A$为Hermite标准形：<br>$$<br>A = \begin{bmatrix}<br>1 &amp; 1 &amp; 2\<br>0 &amp; 2 &amp; 2\<br>1 &amp; 0 &amp; 1<br>\end{bmatrix} \rightarrow \begin{bmatrix}<br>1 &amp; 1 &amp; 2\<br>0 &amp; 2 &amp; 2\<br>0 &amp; -1 &amp; -1<br>\end{bmatrix} \rightarrow \begin{bmatrix}<br>1 &amp; 0 &amp; 1\<br>0 &amp; 1 &amp; 1\<br>0 &amp;0 &amp;0<br>\end{bmatrix}<br>$$<br>可知$rank(A)=2$，$A$的前两列线性无关，取出构成$B$；取出$A$的Hermite标准形的前两行作为$C$，有：</p>
+</blockquote>
+</blockquote>
+<p>$$<br>B = \begin{bmatrix}<br> 1&amp;1  \<br> 0&amp;2  \<br> 1&amp;0<br>\end{bmatrix}, C = \begin{bmatrix}<br>1 &amp; 0 &amp; 1\<br>0 &amp; 1 &amp; 1<br>\end{bmatrix}, A=BC<br>$$</p>
+<hr>
+<p>（6）<strong>谱分解</strong></p>
+<blockquote>
+<p>定义：矩阵$A$互异的特征值${\lambda_1, \lambda_2, …, \lambda_s}$称为矩阵$A$的<strong>谱</strong>。<strong>可相似对角化是可以谱分解的充要条件</strong>。</p>
+</blockquote>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<ul>
+<li>通过求特征值和特征向量得到$A = P\begin{bmatrix}\lambda_1 &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; \ &amp; … &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; \  &amp;  &amp; \lambda_1 &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; \  &amp;  &amp;  &amp;  \lambda_2&amp;  &amp;  &amp;  &amp;  &amp;  &amp; \ &amp;  &amp;  &amp;  &amp; … &amp;  &amp;  &amp;  &amp;  &amp; \  &amp;  &amp;  &amp;  &amp;  &amp; \lambda_2 &amp;  &amp;  &amp;  &amp; \ &amp;  &amp;  &amp;  &amp;  &amp;  &amp; … &amp;  &amp;  &amp; \ &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; \lambda_s &amp;  &amp; \ &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; … &amp; \ &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp;  &amp; \lambda_s\end{bmatrix} P^{-1}$；</li>
+<li>对角阵$\Lambda = \lambda_1 \begin{bmatrix}I_{r_1} &amp;  &amp;  &amp; \ &amp; 0 &amp;  &amp; \ &amp;  &amp; … &amp; \ &amp;  &amp;  &amp; 0\end{bmatrix} + \lambda_2\begin{bmatrix}0 &amp;  &amp;  &amp; \  &amp; I_{r_2} &amp;  &amp; \  &amp;  &amp; 0 &amp; \ &amp;  &amp;  &amp; 0\end{bmatrix} + … + \lambda_s\begin{bmatrix}0 &amp;  &amp;  &amp; \ &amp; 0 &amp;  &amp; \ &amp;  &amp; 0 &amp; \ &amp;  &amp;  &amp; I_{r_s}\end{bmatrix}$，令$Q_i = \begin{bmatrix}0 &amp;  &amp;  &amp; \ &amp;…  &amp;  &amp; \ &amp;  &amp; I_{r_i} &amp; \ &amp;  &amp;  &amp; …\end{bmatrix}$；</li>
+<li>得到$A = \sum_{i=1}^s =\lambda_i P_i$，其中$P_i = P Q_i P^{-1}$。</li>
+</ul>
+<hr>
+<p>（7）<strong>Schur分解</strong></p>
+<blockquote>
+<p>定义：对可逆矩阵$A$，存在<strong>酉矩阵</strong>$U$和<strong>主对角线上元素都为正的上三角矩阵</strong>$R$，使$A=UR$。</p>
+</blockquote>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<ul>
+<li>取矩阵$A = (A_1, A_2, …, A_n)$的列向量，进行<strong>施密特正交化</strong>，得到$u_1,u_2, …,u_n$，有$U=(u_1,u_2,…,u_n)$；</li>
+<li>再由$R = U^H A$得到$R$，于是$A=UR$。</li>
+</ul>
+<hr>
+<p>（8）几种特殊矩阵：</p>
+<ul>
+<li><font color="red"><strong>正规矩阵</strong>：</font>$A^HA = AA^H$        （<font color="blue"><strong>正规矩阵酉相似于对角阵</strong></font>）</li>
+<li><font color="red"><strong>酉矩阵</strong>：</font>$A^HA = AA^H=I$</li>
+<li><font color="red"><strong>Hermite矩阵</strong>：</font>$A^H = A$</li>
+</ul>
+<hr>
+<p>（9）<strong>奇异值分解（SVD分解）</strong></p>
+<blockquote>
+<p><font color="blue"><strong>奇异值</strong></font>：对$rank(A)=r$的矩阵$A$，矩阵$A^HA$的<strong>非零特征值</strong>有$\lambda_1 \geqslant \lambda_2 \geqslant … \geqslant \lambda_r &gt;0$，则称正数$\sigma_i = \sqrt{\lambda_i}$为矩阵$A$的奇异值。</p>
+</blockquote>
+<blockquote>
+<p>定义：对$rank(A)=r$的矩阵$A \in C^{m \times n}$，奇异值有$\sigma_1 \geqslant \sigma_2 \geqslant … \geqslant \sigma_r &gt; 0$，则存在<strong>酉矩阵</strong>$U \in C^{m \times m}, ; V \in C^{n \times n}$，分块矩阵$\Sigma = \begin{bmatrix}\Delta &amp; 0\ 0 &amp; 0\end{bmatrix}$，有$A = U \Sigma V^H$，其中$\Delta = \begin{bmatrix}\sigma_1 &amp;  &amp;  &amp; \ &amp; \sigma_2 &amp;  &amp; \ &amp;  &amp; … &amp; \ &amp;  &amp;  &amp; \sigma_r\end{bmatrix}$。</p>
+</blockquote>
+<blockquote>
+<p>求解：</p>
+</blockquote>
+<ul>
+<li>由特征多项式$|\lambda I - A^HA| = 0$求得特征值$\lambda_1 \geqslant \lambda_2 \geqslant .. \geqslant \lambda_n$，（<font color="red"><strong>务必按照从大到小排列</strong></font>），以及每个特征值对应的特征向量$\alpha_1, \alpha_2, …, \alpha_n$；</li>
+<li>对特征向量进行施密特正交化和单位化（一般只需要单位化），得到单位正交向量组$v_1, v_2, ..,v_n$，则$V=(v_1, v_2, …,v_n)$；</li>
+<li>对于非零特征值$\lambda_1, …, \lambda_r$对应奇异值$\sigma_1, … , \sigma_r$，于是有**${\color{red} {u_i = \frac{1}{\sigma_i}Av_i}}$**，这样得到了$r$个列向量，剩余的设为$\beta$，通过正交的特性$u_i^T \beta = 0$即可求得，</li>
+<li>于是得到$A=U \Sigma V^H$</li>
+</ul>
+<hr>
+<p>（10）<strong>极分解</strong></p>
+<blockquote>
+<p>定义：对于$rank(A)=r$的矩阵$A \in C^{n \times n}$，可以被分解为$A=PQ$，其中$P$为半正定矩阵，$Q$为酉矩阵。</p>
+</blockquote>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<ul>
+<li>对$A$进行奇异值分解，得到$A=U \Sigma V^H$;</li>
+<li>可以得到$A = (U \Sigma U^H)(UV^H)$，于是$P=U \Sigma U^H, ; Q=UV^H$，$A=PQ$。</li>
+</ul>
+<hr>
+<h1 id="4-矩阵的广义逆"><a href="#4-矩阵的广义逆" class="headerlink" title="4. 矩阵的广义逆"></a><font size="4">4. 矩阵的广义逆</font></h1><p>（1）设$A \in C^{m \times n}, B \in C^{n \times m}$，若有$BA=I_n$，则称$B$是$A$的一个<font color="red"><strong>左逆</strong></font>。</p>
+<blockquote>
+<p>等价条件：</p>
+</blockquote>
+<ul>
+<li>$A$的零空间$N(A)={0}$</li>
+<li>$m \geqslant n, ; rank(A)= n$，即$A$是<strong>列满秩的</strong></li>
+<li>$A^H A$可逆</li>
+</ul>
+<hr>
+<p>（2）设$A \in C^{m \times n}, C \in C^{n \times m}$，有$AC = I_m$，则称$C$是$A$的一个<font color="red"><strong>右逆</strong></font>。</p>
+<blockquote>
+<p>等价条件：</p>
+</blockquote>
+<ul>
+<li>$A$的列空间$R(A)=C^m$</li>
+<li>$m \leqslant n, ; rank(A)=m$，即$A$是<strong>行满秩的</strong></li>
+<li>$AA^H$可逆</li>
+</ul>
+<hr>
+<p>（3）对于$A \in  C^{m \times n}, ; G \in C^{n \times m}$，有$AGA=A$，称$G$是$A$的一个<font color="red"><strong>减号广义逆</strong></font>。</p>
+<blockquote>
+<p>求法：</p>
+</blockquote>
+<ul>
+<li>对$rank(A)=r$的矩阵$A$，有矩阵$\begin{bmatrix}A &amp; I_m\ I_n &amp; 0 \end{bmatrix}$进行<strong>初等变换，对$A$行变换时$I_m$保持同步，对$A$列变换时，$I_n$保持同步，将$A$化为最简形</strong>，得到$\begin{bmatrix} I_r&amp; 0  &amp; P  \ 0 &amp; 0 &amp; \   \ Q &amp;  &amp; 0 &amp; \end{bmatrix}$；</li>
+<li>有$G = Q\begin{bmatrix}I_r &amp; U\ V &amp; W\end{bmatrix}P$，其中$U,V,W$是满足固定阶次的任意矩阵。</li>
+</ul>
+<hr>
+<p>（4）<strong>加号广义逆（M-P逆）</strong></p>
+<blockquote>
+<p><strong>定义</strong>：对于矩阵$A \in C^{m \times n}, ; G \in C^{n \times m}$，满足4条</p>
+</blockquote>
+<ul>
+<li>$AGA=A$</li>
+<li>$GAG=G$</li>
+<li>$(AG)^H = AG$</li>
+<li>$(GA)^H=GA$</li>
+</ul>
+<blockquote>
+<p>称$G$为$A$的M-P逆。</p>
+</blockquote>
+<blockquote>
+<p><strong>求法</strong>：</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p><font color="blue"><strong>方法一</strong></font>：</p>
+</blockquote>
+</blockquote>
+<ul>
+<li>对矩阵$A$进行<font color="red"><strong>满秩分解</strong></font>，得到$A=BC$;</li>
+<li>则**$\color{red}{A^+ = C^H(CC^H)^{-1}(B^HB)^{-1}B^H}$**，也就是等于<code>C的右逆 x B的左逆</code>。</li>
+</ul>
+<blockquote>
+<blockquote>
+<p><font color="blue"><strong>方法二</strong></font>：</p>
+</blockquote>
+</blockquote>
+<ul>
+<li>对矩阵$A$进行<font color="red"><strong>奇异值分解</strong></font>，得到$A = U \begin{bmatrix}\Delta &amp;0 \ 0 &amp; 0\end{bmatrix}V^H$；</li>
+<li>则**$\color{red}{A^+ = V \begin{bmatrix}\Delta^{-1} &amp; 0\ 0 &amp; 0\end{bmatrix}U^H}$**。</li>
+</ul>
+<blockquote>
+<p><strong>性质</strong></p>
+</blockquote>
+<ul>
+<li>$rank(A) = rank(A^+)$</li>
+<li>$rank(A^+A) = rank(AA^+)=rank(A)$</li>
+</ul>
+<hr>
+<p>（5）<strong>投影变换</strong></p>
+<blockquote>
+<p><strong>定义</strong>：$C^n = L \oplus M, \quad x=y+z, \quad y \in L, z \in M$，投影变换$\sigma$就是把$C^n$映射成子空间$L$，称$\sigma$是从$C^n$沿子空间$M$到子空间$L$的投影变换，在一组基下对应的矩阵称为<strong>投影矩阵</strong>，子空间$L$称为<strong>投影子空间</strong>。显然有，子空间$L$就是$\sigma$的像空间$R(\sigma)$，$M$就是$\sigma$的核空间$N(\sigma)$，于是$C^n = R(\sigma) \oplus N(\sigma)$。</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p><strong>$\sigma$是投影变换的充要条件是$\sigma$关于某组基下的矩阵$A$是==幂等矩阵==，即$A^2=A$。</strong></p>
+</blockquote>
+</blockquote>
+<blockquote>
+<p><strong>求法</strong></p>
+</blockquote>
+<ul>
+<li>找出像空间$L$的一组基$y_1,y_2,…,y_r$，得到矩阵$B = (y_1 ; y_2 ; …  ; y_r)$；找出$M$的一组基$z_{r+1}, …., z_n$，得到矩阵$C=(z_{r+1} ; … ; z_n)$；</li>
+<li>于是有投影矩阵**$\color{red}{A = (B | 0)(B|C)^{-1}}$**。</li>
+</ul>
+<hr>
+<p>（6）<strong>正交投影变换</strong></p>
+<blockquote>
+<p><strong>定义</strong>：若$C^n = R(\sigma) \oplus N(\sigma)$，$R(\sigma)$的<strong>正交补空间</strong>是$R(\sigma)^{\perp} = N(\sigma)$，称$\sigma$是<strong>正交投影变换</strong>，其在<strong>标准正交基</strong>下对应的矩阵称为正交投影矩阵。</p>
+</blockquote>
+<blockquote>
+<blockquote>
+<p>**$\sigma$是正交投影变换的充要条件是$A$是==幂等Hermite矩阵==，即$A^2=A, ;A^H=A$**。</p>
+</blockquote>
+</blockquote>
+<blockquote>
+<p><strong>求法</strong></p>
+</blockquote>
+<p>$$<br>A = (B | 0)(B|C)^{-1} = (B|0)((B|C)^H(B|C))^{-1}(B|C)^H = {\color{red} {B(B^HB)^{-1}B^H}}<br>$$</p>
+<hr>
+<p>（7）<strong>最佳最小二乘解</strong></p>
+<p> $A \in C^{m \times n}, ; b \in C^m$，则**${\color{red} {x_0=A^+b}}$**是线性方程组$Ax=b$的最佳最小二乘解。</p>
+<p> $A \in C^{m \times n}, ; B \in C^{m \times k}$，则**${\color{red}{X_0 = A^+B}}$**是$AX=B$的最佳最小二乘解。</p>
+<hr>
+<h1 id="5-矩阵分析"><a href="#5-矩阵分析" class="headerlink" title="5. 矩阵分析"></a><font size="4">5. 矩阵分析</font></h1><p>（1）<strong>向量范数</strong>满足<strong>正定性、齐次性和三角不等式</strong>，定义了范数的内积空间称为<strong>赋范空间</strong>。</p>
+<hr>
+<p>（2）重要的<strong>向量范数</strong>：</p>
+<p> 对于复向量$x = (x_1 ;; x_2 ;; … ;; x_n)$，有：</p>
+<ul>
+<li><font color="blue"><strong>2-范数：</strong></font><strong>${\color{red}{|x|| = \sqrt{|x_1|^2 + |x_2|^2 + … + |x_n|^2}}} $</strong></li>
+<li><font color="blue"><strong>1-范数：</strong></font><strong>${\color{red}{||x||_1 = |x_1| + |x_2| + … + |x_n|}}$</strong></li>
+<li><font color="blue"><strong>∞范数：</strong></font><strong>${\color{red}{||x||_{\infty} = \underset{i}{\max} |x_i|}}$</strong></li>
+</ul>
+<blockquote>
+<p>**有限维线性空间的任意两种向量范数都是==等价的==**。</p>
+</blockquote>
+<hr>
+<p>（3）<strong>矩阵范数</strong>满足<strong>正定性、齐次性、三角不等式以及相容性</strong>。</p>
+<hr>
+<p>（4）重要的<strong>矩阵范数</strong>和<strong>诱导范数</strong></p>
+<ul>
+<li><font color="blue"><strong>F范数</strong>：</font><strong>${\color{red}{||A||_F = [tr(A^HA)]^{\frac{1}{2}}}}$</strong></li>
+<li><font color="blue"><strong>列和范数</strong>：**</font> ${\color{red}{||A||<em>1 = \underset{j}{\max}(\sum</em>{i=1}^n |a_{ij}|)}}$<strong>，即</strong>每一列各元素模相加其中的最大值**</li>
+<li><font color="blue"><strong>谱范数</strong>：</font>${\color{red}{||A||_2 = \sqrt{\lambda_1}}}$，其中$\lambda_1$是$A^HA$的<strong>最大特征值</strong></li>
+<li><font color="blue"><strong>行和范数</strong>：</font><strong>${\color{red}{||A||<em>{\infty} = \underset{i}{\max}(\sum</em>{j=1}^n |a_{ij}|)}}$<strong>，即</strong>每一行各元素模相加其中的最大值</strong></li>
+</ul>
+<hr>
+<p>（5）<strong>向量收敛和矩阵收敛</strong>必须其中的每一个元素都收敛。</p>
+<blockquote>
+<p>向量按分量收敛的充要条件是<strong>它按任意一个向量范数收敛</strong>。</p>
+</blockquote>
+<blockquote>
+<p>当$k \rightarrow \infty$时，$||A^{(k)}-A|| \rightarrow 0$，称<strong>矩阵序列按矩阵范数收敛于$A$</strong></p>
+</blockquote>
+<p>（6）<strong>谱半径</strong></p>
+<blockquote>
+<p><strong>定义</strong>：$\lambda_1, \lambda_2, …, \lambda_n$是矩阵$A \in C^{n \times n}$的全部特征值，称**${\color{red}{\rho(A)=\underset{i}{\max}|\lambda_i|}}$**为$A$的<font color="blue"><strong>谱半径</strong></font>。</p>
+</blockquote>
+<blockquote>
+<p>**==$A^k \rightarrow 0(k \rightarrow \infty)$的充要条件是$\rho(A) &lt; 1$==**。</p>
+</blockquote>
+<blockquote>
+<p>**$A$的谱半径是$A$的任意一种矩阵范数的<font color="red">下确界</font>**。</p>
+</blockquote>
+<hr>
+<p>（7）<strong>矩阵幂级数</strong></p>
+<p> 若复变量$z$的幂级数$\sum_{k=0}^{\infty}a_kz^k$的**收敛半径为$R$<strong>，而方阵$A \in C^{n \times n}$的</strong>谱半径为$\rho(A)$**，则</p>
+<ul>
+<li>当**${\color{red} {\rho(A) &lt; R}}$**时，矩阵幂级数$\sum_{k=0}^{\infty}a_kA^k$<strong>收敛</strong>；</li>
+<li>当**${\color{red} {\rho(A) &gt; R}}$**时，矩阵幂级数$\sum_{k=0}^{\infty}a_k A^k$<strong>发散</strong></li>
+</ul>
+<blockquote>
+<p>当求解$A$的特征值比较困难时，由于$A$的每个范数都是谱半径$\rho(A)$的上界，只需要找到一种特殊的矩阵范数$||A||$，使得$||A|| &lt; R$，就能说明矩阵幂级数收敛。（<font color="blue"><strong>优先考虑行和、列和范数</strong></font>）</p>
+</blockquote>
+<hr>
+<p>（8）常用的幂级数</p>
+<p><strong>收敛域是整个复平面的幂级数</strong></p>
+<p>$$e^A = \sum_{k=0}^{\infty} \frac{1}{k!}A^k$$</p>
+<p>$$\cos A = \sum_{k=0}^{\infty}\frac{(-1)^k}{(2k)!}A^{2k}$$</p>
+<p>$$\sin A = \sum_{k=0}^{\infty}\frac{(-1)^k}{(2k+1)!}A^{2k+1}$$</p>
+<p><strong>收敛域为复平面$|z| &lt; 1$的幂级数</strong></p>
+<p>$$(I-A)^{-1} = \sum_{k=0}^{\infty}A^k, \quad \rho(A) &lt; 1$$</p>
+<p>$$\ln(I+A) = \sum_{k=1}^{\infty}\frac{(-1)^{k-1}}{k}A^k, \quad \rho(A) &lt; 1$$</p>
+<hr>
+<p>（9）矩阵函数的两种求法</p>
+<blockquote>
+<p><font color="blue"><strong>方法一：Jordan标准形法</strong></font></p>
+</blockquote>
+<ul>
+<li>求矩阵$A$的Jordan标准形$J_A$，得到**${\color{red} {A = PJ_AP^{-1}}}$**</li>
+<li>设解析函数为$f(z)$，则对每一个Jordan块有$f(J_i)= \begin{bmatrix}f(\lambda_i) &amp; \frac{f’(\lambda_i)}{1!} &amp; \frac{f’’(\lambda_i)}{2!} &amp; … \ &amp; f(\lambda_i) &amp;  \frac{f’(\lambda_i)}{1!} &amp; …\ &amp;  &amp; … &amp; \  &amp;  &amp;  &amp; f(\lambda_i)\end{bmatrix}$，得到$f(J_A)$</li>
+<li>最后得到$f(A) = Pf(J_A)P^{-1}$</li>
+</ul>
+<blockquote>
+<blockquote>
+<p>这种方法的难点在于<strong>需要求Jordan链</strong>，过程中可以会遇到麻烦。**==如果不同特征值个数较多，建议使用第一种；而如果特征值比较单一，并且 <em>代数重数 - 几何重数 &gt; 2</em>，建议使用第二种==**。</p>
+</blockquote>
+</blockquote>
+<blockquote>
+<p><font color="blue"><strong>方法二：最小多项式法</strong></font></p>
+</blockquote>
+<ul>
+<li><p>先计算$A$的Jordan标准形，由此得到最小多项式$m_A(\lambda)=(\lambda -\lambda_1)^{n_1}(\lambda-\lambda_2)^{n_2}…(\lambda-\lambda_s)^{n_s}$，其中幂次和有$\sum_{i=1}^s n_i =m$；</p>
+</li>
+<li><p>得到$g(\lambda)=c_0+c_1\lambda+…+c_{m-1}\lambda^{m-1}$，并令$g^{(j)}(\lambda_i)=f^{(j)}(\lambda_i)$，解得系数$c_0,c_1,…,c_{m-1}$；</p>
+</li>
+<li><p>最后得到$f(A) = c_0I + c_1A+…+c_{m-1}A^{m-1}$</p>
+</li>
+</ul>
+<blockquote>
+<blockquote>
+<p>当<strong>不同特征值的个数比较多或者最小多项式幂次较高</strong>时，计算起来比较复杂，建议使用第一种。</p>
+</blockquote>
+</blockquote>
+<hr>
+<p>（10）两个知识点：</p>
+<blockquote>
+<p>重要的<strong>导数</strong></p>
+</blockquote>
+<ul>
+<li><strong>$\color{red}{\frac{d A^{-1}(t)}{dt} = - A^{-1}(t) \big( \frac{d}{dt}A(t)\big)A^{-1}(t)}$</strong></li>
+</ul>
+<blockquote>
+<p>矩阵指数函数的<strong>行列式</strong></p>
+</blockquote>
+<ul>
+<li>$|e^A| = e^{trA}$</li>
+</ul>
+<hr>
+<p>（11）矩阵函数应用</p>
+<blockquote>
+<p><strong>一阶常系数齐次微分方程组</strong>： $$\begin{cases}\dot{x}(t) = Ax(t)\x(t_0) = C_{n \times 1}\end{cases}$$</p>
+</blockquote>
+<p>解为：**${\color{red}{x(t) = e^{A(t-t_0)}x(t_0)}}$**</p>
+<br>
+
+<blockquote>
+<p><strong>一阶线性常系数非齐次线性方程组</strong>：$$\begin{cases}\dot{x}(t) = Ax(t) + f(t)\x(t_0) = C\end{cases}$$</p>
+</blockquote>
+<p>解为：**${\color{red} {x(t) = e^{A(t-t_0)}x(t_0) + \int_{t_0}^t e^{A(t-\tau)}f(\tau)d \tau}}$**</p>
+<hr>
+<h1 id="6-K积"><a href="#6-K积" class="headerlink" title="6. K积"></a><font size="4">6. K积</font></h1><p>（1）对于矩阵$A=(a_{ij}) \in C^{m \times n}, ;B=(b_{ij}) \in C^{s \times t}$，则<strong>K积</strong>为：<br>$$<br>A \otimes B = \begin{bmatrix}a_{11}B &amp; a_{12}B &amp; … &amp; a_{1n}B\ a_{21}B &amp; a_{22}B &amp; … &amp; a_{2n}B\<br>… &amp; … &amp;  &amp; …\ a_{n1}B &amp; a_{n2}B &amp; … &amp; a_{nn}B\end{bmatrix}<br>$$</p>
+<blockquote>
+<p>K积不具有交换律，即$A \otimes B \neq B \otimes A$</p>
+</blockquote>
+<hr>
+<p>（2）重要性质</p>
+<ul>
+<li>$I \otimes I = I$</li>
+<li>$(A \otimes B)(C \otimes D) = (AC) \otimes (BD)$</li>
+<li>$(A \otimes B)^k = A^k \otimes B^k$</li>
+<li>$(A \otimes B) = (I_m \otimes B)(A \otimes I_n)$</li>
+<li>$(A \otimes B)^{-1} = A^{-1} \otimes B^{-1}$</li>
+<li>$|A \otimes B| = |B \otimes A| = |A|^n|B|^m$   （<font color="red"><strong>这里的<code>n</code>表示<code>B</code>的阶数，<code>m</code>表示<code>A</code>的阶数</strong></font>）</li>
+<li>$rank(A \otimes B) = rank(A)rank(B)$</li>
+</ul>
+<hr>
+<p>（3）<strong>K和</strong>：设$A \in F^{m \times m}, ;B \in F^{n \times n}$，$A \oplus B = A \otimes I_n + I_m \otimes B$</p>
+<hr>
+<p>（4）若$A$的特征值是$\lambda_i$，相应的特征向量是$x_i$；$B$的特征值是$\mu_i$，相应的特征向量为$y_i$；则：</p>
+<ul>
+<li><strong>$A \otimes B$的特征值是$\color{red}{\lambda_i \mu_i}$，对应的特征向量是$\color{red}{x_i \otimes y_i}$</strong></li>
+<li><strong>$A \oplus B$的特征值是$\color{red}{\lambda_i + \mu_i}$，对应的特征向量是$\color{red}{x_i \otimes y_i}$</strong></li>
+</ul>
+<hr>
+<p>（5）设$f(z)$是解析函数，$A \in F^{n \times n}$，$f(A)$存在，则</p>
+<ul>
+<li>$f(I_m \otimes A) = I_m \otimes f(A)$</li>
+<li>$f(A \otimes I_m) = f(A) \otimes I_m$</li>
+</ul>
+<hr>
+<p>（6）设矩阵$A \in F^{m \times n}, \quad A=(A_1, A_2,…,A_n)$，则$Vec(A) = \begin{bmatrix}A_1\ A_2\ …\ A_n\end{bmatrix} \in  F^{nm}$</p>
+<blockquote>
+<p><strong>${\color{red}{Vec(ABC) = (C^T \otimes A)Vec(B)}}$</strong></p>
+</blockquote>
+<ul>
+<li>$Vec(AX) = (I_s \otimes A)Vec(X)$</li>
+<li>$Vec(XC) = (C^T \otimes I_k) Vec(X)$</li>
+</ul>
+<hr>
+<p>（7）求解矩阵方程$AX+XB=D$，将两边同时取<strong>向量化算子</strong>，得到**${\color{red}{(I_m \otimes A + B^T \otimes I_n)Vec(X) = Vec(D)}}$**，最后通过常规的求非齐次线性方程组的方法求解。</p>
+<hr>
+<p>（8）求微分方程：$\begin{cases}\dot{X}(t) = AX(t) + X(t)B\X(0) = C\end{cases}$</p>
+<ul>
+<li>用向量化算子作用在方程两边，得到$Vec(\dot{X}(t)) = (I_n \otimes A + B^T \otimes I_m)Vec(X(t))$和$Vec(X(0)) = Vec(C)$</li>
+<li>令$Y(t) = Vec(X(t)), \quad C_1 = Vec(C), \quad G = I_n \otimes A + B^T \otimes I_m$，通过求解普通微分方程的方法得到$Y(t) = e^{Gt}C_1$；</li>
+<li>将$Y(t), ; G, ; C_1$带入化简求得$X(t)$。</li>
+</ul>
+]]></content>
+      <categories>
+        <category>学习</category>
+        <category>笔记</category>
+      </categories>
+      <tags>
+        <tag>笔记</tag>
+      </tags>
+  </entry>
+</search>
