@@ -166,6 +166,8 @@
     <url>/2022/10/15/Hexo/</url>
     <content><![CDATA[<h2 id="环境要求"><a href="#环境要求" class="headerlink" title="环境要求"></a>环境要求</h2><p>已经能正常使用和deploy的hexo仓库，一个GitHub账号，对Git使用较为熟悉。</p>
 <h2 id="Github-Actions-自动部署"><a href="#Github-Actions-自动部署" class="headerlink" title="Github Actions 自动部署"></a>Github Actions 自动部署</h2><p>建立nashzhou_blog私有仓库, 使用git action来在该仓库下生成静态网页文件, 并推送到YXalix.github.io的gh-pages分支</p>
+
+
 <h2 id="环境配置"><a href="#环境配置" class="headerlink" title="环境配置"></a>环境配置</h2><p>在新设备中安装nvm和Git</p>
 <p><code>install nvm and Git</code></p>
 <p>给新设备添加SSH KEYS</p>
